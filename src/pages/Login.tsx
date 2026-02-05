@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthProvider';
+import { useStaff } from '../store/useStaff';
 import logo from '../assets/novo-logo.svg';
 
 const ADMIN_EMAIL = 'admin.novoasthetics@novo-asthetics.com';
@@ -8,54 +9,49 @@ const ADMIN_PASS = '786/Novo@dmin345';
 
 export const LoginPage: React.FC = () => {
   const { setRole } = useAuth();
+  const { verifyStaffCredentials } = useStaff();
   const navigate = useNavigate();
   const [role, setRoleLocal] = useState<'admin' | 'doctor' | 'fdo'>('admin');
-  const [doctorName, setDoctorName] = useState('Dr. Khan');
-  const [email, setEmail] = useState(ADMIN_EMAIL);
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(false);
   const [info, setInfo] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (role === 'doctor' && !doctorName.trim()) {
-      setInfo('Please enter doctor name.');
-      return;
-    }
+    setInfo('');
     if (role === 'admin') {
       if (email.trim().toLowerCase() !== ADMIN_EMAIL || password !== ADMIN_PASS) {
-        setInfo('Invalid admin credentials. Use correct credentials.');
+        setInfo('Invalid admin credentials.');
         return;
       }
-    } else if (role === 'doctor') {
-      if (!email.trim()) {
-        setInfo('Please enter email for doctor login.');
-        return;
-      }
-      if (password !== ADMIN_PASS) {
-        setInfo('Invalid doctor credentials. Use correct credentials.');
-        return;
-      }
-    } else {
-      if (!email.trim()) {
-        setInfo('Please enter email for FDO login.');
-        return;
-      }
-      if (password !== ADMIN_PASS) {
-        setInfo('Invalid FDO credentials. Use correct credentials.');
-        return;
-      }
-    }
-    setInfo('');
-    if (role === 'doctor') {
-      setRole('doctor', doctorName.trim());
-      navigate('/appointments', { replace: true });
-    } else if (role === 'fdo') {
-      setRole('fdo');
-      navigate('/appointments', { replace: true });
-    } else {
       setRole('admin');
       navigate('/', { replace: true });
+      return;
+    }
+    if (!email.trim()) {
+      setInfo('Please enter your email.');
+      return;
+    }
+    if (!password) {
+      setInfo('Please enter your password.');
+      return;
+    }
+    const staffMember = await verifyStaffCredentials(email.trim(), password);
+    if (!staffMember) {
+      setInfo('Invalid email or password.');
+      return;
+    }
+    if (role === 'doctor') {
+      if (staffMember.role !== 'Doctor') {
+        setInfo('This account is not a doctor. Use Doctor role to sign in as doctor.');
+        return;
+      }
+      setRole('doctor', staffMember.name);
+      navigate('/appointments', { replace: true });
+    } else {
+      setRole('fdo');
+      navigate('/appointments', { replace: true });
     }
   };
 
@@ -88,17 +84,6 @@ export const LoginPage: React.FC = () => {
               <option value="fdo">FDO</option>
             </select>
           </label>
-          {role === 'doctor' && (
-            <label className="public-field">
-              <span>Doctor Name</span>
-              <input
-                className="input"
-                value={doctorName}
-                onChange={(e) => setDoctorName(e.target.value)}
-                required
-              />
-            </label>
-          )}
           <label className="public-field">
             <span>Email</span>
             <input

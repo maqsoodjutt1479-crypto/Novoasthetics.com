@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { StatusBadge } from '../components/StatusBadge';
 import { useStaff, type StaffRole, type StaffMember } from '../store/useStaff';
+import { hashPassword } from '../utils/password';
 
 export const StaffPage: React.FC = () => {
   const { staff, addStaff, updateStatus, removeStaff } = useStaff();
@@ -11,10 +12,13 @@ export const StaffPage: React.FC = () => {
     role: 'Doctor' as StaffRole,
     phone: '',
     email: '',
+    password: '',
+    confirmPassword: '',
     specialty: '',
     branch: 'Main',
     status: 'Active' as StaffMember['status'],
   });
+  const [formError, setFormError] = useState('');
 
   const filtered = useMemo(
     () =>
@@ -30,8 +34,21 @@ export const StaffPage: React.FC = () => {
     [staff, search, filterRole]
   );
 
-  const handleAdd = () => {
-    if (!form.name || !form.phone || !form.email) return;
+  const handleAdd = async () => {
+    setFormError('');
+    if (!form.name || !form.phone || !form.email) {
+      setFormError('Name, phone, and email are required.');
+      return;
+    }
+    if (!form.password || form.password.length < 6) {
+      setFormError('Password is required and must be at least 6 characters.');
+      return;
+    }
+    if (form.password !== form.confirmPassword) {
+      setFormError('Password and confirm password do not match.');
+      return;
+    }
+    const passwordHash = await hashPassword(form.password);
     addStaff({
       name: form.name,
       role: form.role,
@@ -40,12 +57,15 @@ export const StaffPage: React.FC = () => {
       specialty: form.specialty || undefined,
       branch: form.branch || undefined,
       status: form.status,
+      passwordHash,
     });
     setForm({
       name: '',
       role: 'Doctor',
       phone: '',
       email: '',
+      password: '',
+      confirmPassword: '',
       specialty: '',
       branch: 'Main',
       status: 'Active',
@@ -103,6 +123,22 @@ export const StaffPage: React.FC = () => {
           />
           <input
             className="input"
+            type="password"
+            placeholder="Password (min 6 characters)"
+            value={form.password}
+            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+            autoComplete="new-password"
+          />
+          <input
+            className="input"
+            type="password"
+            placeholder="Confirm password"
+            value={form.confirmPassword}
+            onChange={(e) => setForm((f) => ({ ...f, confirmPassword: e.target.value }))}
+            autoComplete="new-password"
+          />
+          <input
+            className="input"
             placeholder="Specialty (e.g., Laser, PRP)"
             value={form.specialty}
             onChange={(e) => setForm((f) => ({ ...f, specialty: e.target.value }))}
@@ -122,6 +158,7 @@ export const StaffPage: React.FC = () => {
             <option value="Inactive">Inactive</option>
           </select>
         </div>
+        {formError && <div className="muted small" style={{ marginTop: 8, color: 'var(--color-error, #c00)' }}>{formError}</div>}
       </div>
 
       <div className="panel section">

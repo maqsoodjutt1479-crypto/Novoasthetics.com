@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { hashPassword } from '../utils/password';
 
 export type StaffRole = 'Doctor' | 'Nurse' | 'Reception' | 'Admin' | 'Technician';
 
@@ -11,6 +12,8 @@ export type StaffMember = {
   specialty?: string;
   branch?: string;
   status: 'Active' | 'Inactive';
+  /** Hashed password for staff login; never stored in plain text */
+  passwordHash?: string;
 };
 
 type StaffState = {
@@ -18,6 +21,8 @@ type StaffState = {
   addStaff: (member: Omit<StaffMember, 'id'>) => StaffMember;
   updateStatus: (id: string, status: StaffMember['status']) => void;
   removeStaff: (id: string) => void;
+  /** Verify staff by email + password; returns member if valid, null otherwise */
+  verifyStaffCredentials: (email: string, password: string) => Promise<StaffMember | null>;
 };
 
 const STORAGE_KEY = 'clinic-staff';
@@ -79,4 +84,15 @@ export const useStaff = create<StaffState>((set) => ({
       persistStaff(next);
       return { staff: next };
     }),
+  verifyStaffCredentials: async (email, password) => {
+    const hash = await hashPassword(password);
+    const state = useStaff.getState();
+    const member = state.staff.find(
+      (s) =>
+        s.email.toLowerCase() === email.trim().toLowerCase() &&
+        s.passwordHash === hash &&
+        s.status === 'Active'
+    );
+    return member ?? null;
+  },
 }));
