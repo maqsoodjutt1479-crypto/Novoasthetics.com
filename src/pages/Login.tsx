@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthProvider';
 import logo from '../assets/novo-logo.svg';
 
-const ADMIN_EMAIL = 'admin@gmail.com';
-const ADMIN_PASS = 'admin123';
+const ADMIN_EMAIL = 'admin.novoasthetics@novo-asthetics.com';
+const ADMIN_PASS = '786/Novo@dmin345';
 
 export const LoginPage: React.FC = () => {
   const { setRole } = useAuth();
@@ -24,7 +24,7 @@ export const LoginPage: React.FC = () => {
     }
     if (role === 'admin') {
       if (email.trim().toLowerCase() !== ADMIN_EMAIL || password !== ADMIN_PASS) {
-        setInfo('Invalid admin credentials. Use admin@gmail.com / admin123.');
+        setInfo('Invalid admin credentials. Use correct credentials.');
         return;
       }
     } else if (role === 'doctor') {
@@ -33,7 +33,7 @@ export const LoginPage: React.FC = () => {
         return;
       }
       if (password !== ADMIN_PASS) {
-        setInfo('Invalid doctor credentials. Password is admin123.');
+        setInfo('Invalid doctor credentials. Use correct credentials.');
         return;
       }
     } else {
@@ -42,7 +42,7 @@ export const LoginPage: React.FC = () => {
         return;
       }
       if (password !== ADMIN_PASS) {
-        setInfo('Invalid FDO credentials. Password is admin123.');
+        setInfo('Invalid FDO credentials. Use correct credentials.');
         return;
       }
     }
