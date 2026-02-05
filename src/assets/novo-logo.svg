@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 140" role="img" aria-label="Novo Aesthetics logo">
+  <defs>
+    <style>
+      .novo {
+        font: 700 96px "Georgia", "Times New Roman", serif;
+        letter-spacing: 6px;
+        fill: #111111;
+      }
+      .aesthetics {
+        font: 600 24px "Georgia", "Times New Roman", serif;
+        letter-spacing: 10px;
+        fill: #0f8f82;
+      }
+    </style>
+  </defs>
+  <text x="0" y="95" class="novo">
+    <tspan fill="#111111">N</tspan>
+    <tspan fill="#0f8f82">O</tspan>
+    <tspan fill="#111111">V</tspan>
+    <tspan fill="#111111">O</tspan>
+  </text>
+  <text x="210" y="132" class="aesthetics" text-anchor="middle">AESTHETICS</text>
+</svg>

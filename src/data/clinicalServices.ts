@@ -1,0 +1,132 @@
+export type ClinicalService = {
+  id: string;
+  category: string;
+  name: string;
+  code?: string;
+  duration: number;
+  color: string;
+  price: number;
+  status: 'Active' | 'Inactive';
+};
+
+export const clinicalServices: ClinicalService[] = [
+  {
+    id: 'svc-1',
+    category: 'Body Contouring',
+    name: 'Body Contouring',
+    code: 'BC-01',
+    duration: 45,
+    color: '#0ea5e9',
+    price: 15000,
+    status: 'Active',
+  },
+  {
+    id: 'svc-2',
+    category: 'Chemical Peel',
+    name: 'Chemical Peel',
+    duration: 30,
+    color: '#38bdf8',
+    price: 9000,
+    status: 'Active',
+  },
+  {
+    id: 'svc-3',
+    category: 'Laser',
+    name: 'Laser Hair Removal',
+    code: 'LHR',
+    duration: 60,
+    color: '#f59e0b',
+    price: 22000,
+    status: 'Active',
+  },
+  {
+    id: 'svc-4',
+    category: 'Body Contouring',
+    name: 'CoolSculpt - Double Chin',
+    code: 'CS-DC',
+    duration: 45,
+    color: '#0ea5e9',
+    price: 19995,
+    status: 'Active',
+  },
+  {
+    id: 'svc-5',
+    category: 'Body Contouring',
+    name: 'CoolSculpt - Large',
+    code: 'CS-L',
+    duration: 45,
+    color: '#0ea5e9',
+    price: 24995,
+    status: 'Active',
+  },
+  {
+    id: 'svc-6',
+    category: 'Body Contouring',
+    name: 'CoolSculpt - Medium',
+    code: 'CS-M',
+    duration: 45,
+    color: '#0ea5e9',
+    price: 24995,
+    status: 'Active',
+  },
+  {
+    id: 'svc-7',
+    category: 'Body Contouring',
+    name: 'CoolSculpt Duo',
+    code: 'CS-DUO',
+    duration: 45,
+    color: '#0ea5e9',
+    price: 29995,
+    status: 'Active',
+  },
+  {
+    id: 'svc-8',
+    category: 'Body Contouring',
+    name: 'CoolSculpt Duo - Bingowings',
+    code: 'CS-DUO-BW',
+    duration: 45,
+    color: '#0ea5e9',
+    price: 29995,
+    status: 'Active',
+  },
+  {
+    id: 'svc-9',
+    category: 'Body Contouring',
+    name: 'EMSCulpt Session',
+    code: 'EMS-SESSION',
+    duration: 45,
+    color: '#0ea5e9',
+    price: 11995,
+    status: 'Active',
+  },
+  {
+    id: 'svc-10',
+    category: 'Body Contouring',
+    name: 'Radiofrequency - Double Chin',
+    code: 'RF-DC',
+    duration: 45,
+    color: '#0ea5e9',
+    price: 6995,
+    status: 'Active',
+  },
+  {
+    id: 'svc-11',
+    category: 'Body Contouring',
+    name: 'ULTIMATE - RF (Body area)',
+    code: 'RF-BODY',
+    duration: 45,
+    color: '#0ea5e9',
+    price: 7000,
+    status: 'Active',
+  },
+  {
+    id: 'svc-12',
+    category: 'Body Contouring',
+    name: 'Ultrashape - Abdomen',
+    code: 'US-ABD',
+    duration: 45,
+    color: '#0ea5e9',
+    price: 15995,
+    status: 'Active',
+  },
+];

@@ -1,0 +1,107 @@
+import { create } from 'zustand';
+import { clinicalServices as initialServices, type ClinicalService } from '../data/clinicalServices';
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
+
+type ClinicalServicesState = {
+  services: ClinicalService[];
+  isLoading: boolean;
+  error: string | null;
+  hydrate: () => Promise<void>;
+  addService: (service: Omit<ClinicalService, 'id'>) => Promise<ClinicalService | null>;
+  removeService: (id: string) => Promise<void>;
+};
+
+const STORAGE_KEY = 'clinic-clinical-services';
+
+const loadServices = (): ClinicalService[] => {
+  if (typeof window === 'undefined') return initialServices;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return initialServices;
+    const parsed = JSON.parse(raw) as ClinicalService[];
+    return Array.isArray(parsed) ? parsed : initialServices;
+  } catch (err) {
+    console.error('Failed to load services', err);
+    return initialServices;
+  }
+};
+
+const persistServices = (rows: ClinicalService[]) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+  } catch (err) {
+    console.error('Failed to persist services', err);
+  }
+};
+
+const createLocalId = () => `svc-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+export const useClinicalServices = create<ClinicalServicesState>((set, get) => ({
+  services: loadServices(),
+  isLoading: false,
+  error: null,
+  hydrate: async () => {
+    if (!isSupabaseConfigured || !supabase) {
+      set({ services: loadServices(), isLoading: false, error: null });
+      return;
+    }
+    set({ isLoading: true, error: null });
+    const { data, error } = await supabase
+      .from('clinical_services')
+      .select('*')
+      .order('category', { ascending: true })
+      .order('name', { ascending: true });
+    if (error || !data) {
+      set({
+        services: loadServices(),
+        isLoading: false,
+        error: error?.message ?? 'Failed to load services from database.',
+      });
+      return;
+    }
+    set({ services: data as ClinicalService[], isLoading: false, error: null });
+  },
+  addService: async (service) => {
+    const fallbackId = createLocalId();
+    if (!isSupabaseConfigured || !supabase) {
+      const created: ClinicalService = { ...service, id: fallbackId };
+      set((state) => {
+        const next = [created, ...state.services];
+        persistServices(next);
+        return { services: next };
+      });
+      return created;
+    }
+    const payload = { ...service, id: fallbackId };
+    const { data, error } = await supabase
+      .from('clinical_services')
+      .insert(payload)
+      .select('*')
+      .single();
+    if (error || !data) {
+      set({ error: error?.message ?? 'Failed to add service.' });
+      return null;
+    }
+    const created = data as ClinicalService;
+    set((state) => ({ services: [created, ...state.services] }));
+    return created;
+  },
+  removeService: async (id) => {
+    if (!isSupabaseConfigured || !supabase) {
+      set((state) => {
+        const next = state.services.filter((s) => s.id !== id);
+        persistServices(next);
+        return { services: next };
+      });
+      return;
+    }
+    const { error } = await supabase.from('clinical_services').delete().eq('id', id);
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    const next = get().services.filter((s) => s.id !== id);
+    set({ services: next });
+  },
+}));
