@@ -36,6 +36,7 @@ export const AppointmentsPage: React.FC = () => {
   const role = user?.role || 'admin';
   const doctorName = user?.doctorName;
   const doctorNameNormalized = doctorName?.trim().toLowerCase();
+  const isReadOnly = role === 'fdo';
   const showFinancial = role === 'admin' || role === 'fdo';
   const canPrint = role === 'admin' || role === 'fdo';
   const canEdit = role === 'admin';
@@ -125,6 +126,7 @@ export const AppointmentsPage: React.FC = () => {
   }, [addTreatments, treatments, showFinancial, form.service, servicePriceMap]);
 
   const handleAddTreatment = () => {
+    if (isReadOnly) return;
     if (!treatmentSelect) return;
     const price = servicePriceMap.get(treatmentSelect) ?? 0;
     if (treatments.some((item) => item.name === treatmentSelect)) return;
@@ -132,10 +134,21 @@ export const AppointmentsPage: React.FC = () => {
   };
 
   const handleRemoveTreatment = (name: string) => {
+    if (isReadOnly) return;
     setTreatments((prev) => prev.filter((item) => item.name !== name));
   };
 
   const parseDate = (dt: string) => new Date(dt.replace(' ', 'T'));
+  const getDiscountValue = (discount: string, amount: number) => {
+    const raw = (discount || '').trim();
+    if (!raw) return 0;
+    const numeric = Number(raw.replace(/[^0-9.]/g, ''));
+    if (!Number.isFinite(numeric)) return 0;
+    if (/%\s*$/.test(raw)) {
+      return Math.round((amount * numeric) / 100);
+    }
+    return Math.round(numeric);
+  };
 
   const referenceDate = useMemo(() => new Date().toLocaleDateString('en-CA'), []);
   const getDatePart = (value: string) => value.split('T')[0]?.split(' ')[0] || value;
@@ -232,6 +245,7 @@ export const AppointmentsPage: React.FC = () => {
   };
 
   const handleEdit = (row: Appointment) => {
+    if (isReadOnly || !canEdit) return;
     const parsedServices = row.service
       .split(' + ')
       .map((part) => part.trim())
@@ -279,6 +293,7 @@ export const AppointmentsPage: React.FC = () => {
   };
 
   const handleConfirmAssign = () => {
+    if (isReadOnly) return;
     if (!assigning || !selectedPackage) return;
     addAssignment({
       packageName: selectedPackage,
@@ -335,6 +350,7 @@ export const AppointmentsPage: React.FC = () => {
   };
 
   const handleAdd = () => {
+    if (isReadOnly) return;
     if (!form.patient || !form.phone || !form.datetime) return;
     if (form.scheduleNext && !form.nextDatetime) {
       window.alert('Please select a next appointment date/time.');
@@ -383,6 +399,7 @@ export const AppointmentsPage: React.FC = () => {
           patientName: created.patient,
           method,
           amount: created.amount,
+          discount: created.discount,
           cash: method === 'CASH' ? paidAmount : 0,
           card: method === 'CARD' ? paidAmount : 0,
           bank: method === 'BANK_TRANSFER' ? paidAmount : 0,
@@ -469,7 +486,7 @@ export const AppointmentsPage: React.FC = () => {
             <div className="section__title">Book New Appointment</div>
             <div className="muted">Enter patient, doctor, date/time, amount; status starts Pending</div>
           </div>
-          <button className="pill" onClick={handleAdd}>
+          <button className="pill" onClick={handleAdd} disabled={isReadOnly}>
             {editingId ? 'Update Appointment' : '+ Add Appointment'}
           </button>
         </div>
@@ -479,12 +496,14 @@ export const AppointmentsPage: React.FC = () => {
             placeholder="Patient Name / ID"
             value={form.patient}
             onChange={(e) => setForm((f) => ({ ...f, patient: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
             placeholder="Mobile Number"
             value={form.phone}
             onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            disabled={isReadOnly}
           />
           {role === 'doctor' && doctorName ? (
             <div className="pill">Doctor: {doctorName}</div>
@@ -493,6 +512,7 @@ export const AppointmentsPage: React.FC = () => {
               className="input"
               value={form.doctor}
               onChange={(e) => setForm((f) => ({ ...f, doctor: e.target.value }))}
+              disabled={isReadOnly}
             >
               {doctorOptions.map((doc) => (
                 <option key={doc} value={doc}>
@@ -506,12 +526,13 @@ export const AppointmentsPage: React.FC = () => {
             className="input"
             value={form.datetime}
             onChange={(e) => setForm((f) => ({ ...f, datetime: e.target.value }))}
+            disabled={isReadOnly}
           />
           <label className="pill pill--ghost" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input
               type="checkbox"
               checked={form.scheduleNext}
-              disabled={Boolean(editingId)}
+              disabled={isReadOnly || Boolean(editingId)}
               onChange={(e) =>
                 setForm((f) => ({
                   ...f,
@@ -528,6 +549,7 @@ export const AppointmentsPage: React.FC = () => {
               className="input"
               value={form.nextDatetime}
               onChange={(e) => setForm((f) => ({ ...f, nextDatetime: e.target.value }))}
+              disabled={isReadOnly}
             />
           )}
           <label className="pill pill--ghost" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -541,6 +563,7 @@ export const AppointmentsPage: React.FC = () => {
                   setTreatments([]);
                 }
               }}
+              disabled={isReadOnly}
             />
             <span>Add treatments to booking</span>
           </label>
@@ -551,6 +574,7 @@ export const AppointmentsPage: React.FC = () => {
                 value={treatmentSelect}
                 onChange={(e) => setTreatmentSelect(e.target.value)}
                 style={{ flex: 1 }}
+                disabled={isReadOnly}
               >
                 {serviceOptions.map((svc) => (
                   <option key={svc} value={svc}>
@@ -558,7 +582,7 @@ export const AppointmentsPage: React.FC = () => {
                   </option>
                 ))}
               </select>
-              <button type="button" className="pill" onClick={handleAddTreatment}>
+              <button type="button" className="pill" onClick={handleAddTreatment} disabled={isReadOnly}>
                 Add
               </button>
             </div>
@@ -567,6 +591,7 @@ export const AppointmentsPage: React.FC = () => {
               className="input"
               value={form.service}
               onChange={(e) => setForm((f) => ({ ...f, service: e.target.value }))}
+              disabled={isReadOnly}
             >
               {serviceOptions.map((svc) => (
                 <option key={svc} value={svc}>
@@ -588,6 +613,7 @@ export const AppointmentsPage: React.FC = () => {
                       type="button"
                       className="pill pill--ghost"
                       onClick={() => handleRemoveTreatment(item.name)}
+                      disabled={isReadOnly}
                     >
                       Remove
                     </button>
@@ -601,12 +627,14 @@ export const AppointmentsPage: React.FC = () => {
             placeholder="Type (e.g., Consultation)"
             value={form.apptType}
             onChange={(e) => setForm((f) => ({ ...f, apptType: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
             placeholder="Centre (e.g., BRFSD)"
             value={form.centre}
             onChange={(e) => setForm((f) => ({ ...f, centre: e.target.value }))}
+            disabled={isReadOnly}
           />
           {showFinancial && (
             <>
@@ -616,7 +644,7 @@ export const AppointmentsPage: React.FC = () => {
                 className="input"
                 placeholder="Amount"
                 value={form.amount}
-                disabled={addTreatments}
+                disabled={addTreatments || isReadOnly}
                 onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
               />
               <input
@@ -624,6 +652,7 @@ export const AppointmentsPage: React.FC = () => {
                 placeholder="Discount (e.g., 10% or 500)"
                 value={form.discount}
                 onChange={(e) => setForm((f) => ({ ...f, discount: e.target.value }))}
+                disabled={isReadOnly}
               />
               <select
                 className="input"
@@ -631,6 +660,7 @@ export const AppointmentsPage: React.FC = () => {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, paymentStatus: e.target.value as Appointment['paymentStatus'] }))
                 }
+                disabled={isReadOnly}
               >
                 <option value="Unpaid">Unpaid</option>
                 <option value="Partial">Partial</option>
@@ -643,6 +673,7 @@ export const AppointmentsPage: React.FC = () => {
             placeholder="Notes"
             value={form.notes}
             onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+            disabled={isReadOnly}
           />
         </div>
       </div>
@@ -754,7 +785,10 @@ export const AppointmentsPage: React.FC = () => {
               <button
                 key={`free-${slot.time}`}
                 className="slot"
-                onClick={() => setForm((f) => ({ ...f, datetime: `${calendarDate}T${slot.time}` }))}
+                onClick={() =>
+                  !isReadOnly && setForm((f) => ({ ...f, datetime: `${calendarDate}T${slot.time}` }))
+                }
+                disabled={isReadOnly}
               >
                 <div className="strong">{slot.time}</div>
                 <div className="muted small">Free</div>
@@ -903,6 +937,10 @@ export const AppointmentsPage: React.FC = () => {
               price: servicePriceMap.get(name) ?? 0,
             }));
             const treatmentTotal = treatmentRows.reduce((sum, row) => sum + row.price, 0);
+            const baseAmount = Number.isFinite(printAppointment.amount) ? printAppointment.amount : treatmentTotal;
+            const discountValue = getDiscountValue(printAppointment.discount, baseAmount);
+            const payableAmount = Math.max(0, baseAmount - discountValue);
+            const discountLabel = (printAppointment.discount || '0%').trim() || '0%';
             return (
               <>
           <div className="consultation-watermark" aria-hidden="true">
@@ -967,6 +1005,32 @@ export const AppointmentsPage: React.FC = () => {
               <div>{printAppointment.centre}</div>
             </div>
           </section>
+
+          {showFinancial && (
+            <section className="consultation-block">
+              <div className="consultation-block__title">Payment Summary</div>
+              <table className="consultation-table">
+                <thead>
+                  <tr>
+                    <th>Amount</th>
+                    <th>Discount</th>
+                    <th>Payable</th>
+                    <th>Status</th>
+                    <th>Method</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>{formatMoney(baseAmount)}</td>
+                    <td>{`${discountLabel} (${formatMoney(discountValue)})`}</td>
+                    <td>{formatMoney(payableAmount)}</td>
+                    <td>{printAppointment.paymentStatus}</td>
+                    <td>{printAppointment.paymentMethod || 'CASH'}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
+          )}
 
           {hasMultiple && (
             <section className="consultation-block">

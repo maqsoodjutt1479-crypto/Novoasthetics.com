@@ -3,10 +3,13 @@ import { StatusBadge } from '../components/StatusBadge';
 import { useProductSales } from '../store/useProductSales';
 import { usePayments, type PaymentMethod } from '../store/usePayments';
 import logo from '../assets/novo-logo.svg';
+import { useAuth } from '../components/AuthProvider';
 
 export const ProductsPage: React.FC = () => {
   const { products, orders, addProduct, addOrder, updateOrder, adjustInventoryForEdit } = useProductSales();
   const { addPayment } = usePayments();
+  const { user } = useAuth();
+  const isReadOnly = user?.role === 'fdo';
   const [orderId, setOrderId] = useState('');
   const [patientSearch, setPatientSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
@@ -53,6 +56,7 @@ export const ProductsPage: React.FC = () => {
   }, [orderId, patientSearch, productSearch, location, status, orders]);
 
   const handleAddProduct = () => {
+    if (isReadOnly) return;
     if (!productForm.name || !productForm.price || !productForm.stock) return;
     addProduct({
       name: productForm.name,
@@ -65,6 +69,7 @@ export const ProductsPage: React.FC = () => {
   };
 
   const handleCreateSale = () => {
+    if (isReadOnly) return;
     setSaleError('');
     const product = products.find((p) => p.name === saleForm.productName);
     if (!saleForm.patient.trim()) {
@@ -126,6 +131,7 @@ export const ProductsPage: React.FC = () => {
   };
 
   const openEdit = (order: (typeof orders)[number]) => {
+    if (isReadOnly) return;
     setEditingOrder(order);
     setEditForm({
       paid: String(order.paid ?? 0),
@@ -138,6 +144,7 @@ export const ProductsPage: React.FC = () => {
   };
 
   const handleUpdateOrder = () => {
+    if (isReadOnly) return;
     if (!editingOrder) return;
     const paid = Number(editForm.paid) || 0;
     const deltaPaid = Math.max(0, paid - editingOrder.paid);
@@ -218,7 +225,7 @@ export const ProductsPage: React.FC = () => {
             <div className="section__title">Orders</div>
             <div className="muted">Search by order, patient, product, location</div>
           </div>
-          <button className="pill" onClick={() => setSaleOpen(true)}>
+          <button className="pill" onClick={() => setSaleOpen(true)} disabled={isReadOnly}>
             + New Sale
           </button>
         </div>
@@ -314,7 +321,7 @@ export const ProductsPage: React.FC = () => {
                             />
                           </svg>
                         </button>
-                        <button className="icon-btn" title="Update" aria-label="Update" onClick={() => openEdit(o)}>
+                        <button className="icon-btn" title="Update" aria-label="Update" onClick={() => openEdit(o)} disabled={isReadOnly}>
                           <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path
                               d="M3 17.25V21h3.75l11-11-3.75-3.75-11 11zm2.92 2.83H5v-.92l9.06-9.06.92.92L5.92 20.08zM20.71 7.04a1 1 0 0 0 0-1.41L18.37 3.29a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
@@ -338,7 +345,7 @@ export const ProductsPage: React.FC = () => {
             <div className="section__title">Products / Inventory</div>
             <div className="muted">Track stock, sales, and low-stock alerts</div>
           </div>
-          <button className="pill" onClick={handleAddProduct}>
+          <button className="pill" onClick={handleAddProduct} disabled={isReadOnly}>
             Save Product
           </button>
         </div>
@@ -348,6 +355,7 @@ export const ProductsPage: React.FC = () => {
             placeholder="Product Name"
             value={productForm.name}
             onChange={(e) => setProductForm((f) => ({ ...f, name: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -356,6 +364,7 @@ export const ProductsPage: React.FC = () => {
             placeholder="Price"
             value={productForm.price}
             onChange={(e) => setProductForm((f) => ({ ...f, price: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -364,6 +373,7 @@ export const ProductsPage: React.FC = () => {
             placeholder="Stock Qty"
             value={productForm.stock}
             onChange={(e) => setProductForm((f) => ({ ...f, stock: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -372,12 +382,14 @@ export const ProductsPage: React.FC = () => {
             placeholder="Sold (optional)"
             value={productForm.sold}
             onChange={(e) => setProductForm((f) => ({ ...f, sold: e.target.value }))}
+            disabled={isReadOnly}
           />
           <label className="pill">
             <input
               type="checkbox"
               checked={productForm.notify}
               onChange={(e) => setProductForm((f) => ({ ...f, notify: e.target.checked }))}
+              disabled={isReadOnly}
             />
             <span>Enable low-stock alert</span>
           </label>
@@ -432,17 +444,20 @@ export const ProductsPage: React.FC = () => {
                 placeholder="Patient Name"
                 value={saleForm.patient}
                 onChange={(e) => setSaleForm((f) => ({ ...f, patient: e.target.value }))}
+                disabled={isReadOnly}
               />
               <input
                 className="input"
                 placeholder="Patient ID (optional)"
                 value={saleForm.patientId}
                 onChange={(e) => setSaleForm((f) => ({ ...f, patientId: e.target.value }))}
+                disabled={isReadOnly}
               />
               <select
                 className="input"
                 value={saleForm.productName}
                 onChange={(e) => setSaleForm((f) => ({ ...f, productName: e.target.value }))}
+                disabled={isReadOnly}
               >
                 <option value="">-- Select Product --</option>
                 {products.map((p) => (
@@ -458,11 +473,13 @@ export const ProductsPage: React.FC = () => {
                 placeholder="Quantity"
                 value={saleForm.qty}
                 onChange={(e) => setSaleForm((f) => ({ ...f, qty: Number(e.target.value) }))}
+                disabled={isReadOnly}
               />
               <select
                 className="input"
                 value={saleForm.location}
                 onChange={(e) => setSaleForm((f) => ({ ...f, location: e.target.value }))}
+                disabled={isReadOnly}
               >
                 <option value="Main Branch">Main Branch</option>
                 <option value="Clinic Store">Clinic Store</option>
@@ -471,6 +488,7 @@ export const ProductsPage: React.FC = () => {
                 className="input"
                 value={saleForm.method}
                 onChange={(e) => setSaleForm((f) => ({ ...f, method: e.target.value as PaymentMethod }))}
+                disabled={isReadOnly}
               >
                 <option value="CASH">Cash</option>
                 <option value="CARD">Card</option>
@@ -484,11 +502,12 @@ export const ProductsPage: React.FC = () => {
                 placeholder="Paid Amount"
                 value={saleForm.paid}
                 onChange={(e) => setSaleForm((f) => ({ ...f, paid: e.target.value }))}
+                disabled={isReadOnly}
               />
             </div>
             {saleError && <div className="muted small" style={{ marginTop: 10 }}>{saleError}</div>}
             <div className="action-stack" style={{ marginTop: 12 }}>
-              <button className="pill" onClick={handleCreateSale}>
+              <button className="pill" onClick={handleCreateSale} disabled={isReadOnly}>
                 Complete Sale
               </button>
               <button className="pill pill--ghost" onClick={() => setSaleOpen(false)}>
@@ -524,11 +543,13 @@ export const ProductsPage: React.FC = () => {
                 placeholder="Paid amount"
                 value={editForm.paid}
                 onChange={(e) => setEditForm((f) => ({ ...f, paid: e.target.value }))}
+                disabled={isReadOnly}
               />
               <select
                 className="input"
                 value={editForm.method}
                 onChange={(e) => setEditForm((f) => ({ ...f, method: e.target.value as PaymentMethod }))}
+                disabled={isReadOnly}
               >
                 <option value="CASH">Cash</option>
                 <option value="CARD">Card</option>
@@ -539,6 +560,7 @@ export const ProductsPage: React.FC = () => {
                 className="input"
                 value={editForm.productName}
                 onChange={(e) => setEditForm((f) => ({ ...f, productName: e.target.value }))}
+                disabled={isReadOnly}
               >
                 {products.map((p) => (
                   <option key={p.id} value={p.name}>
@@ -553,11 +575,13 @@ export const ProductsPage: React.FC = () => {
                 placeholder="Quantity"
                 value={editForm.qty}
                 onChange={(e) => setEditForm((f) => ({ ...f, qty: Number(e.target.value) }))}
+                disabled={isReadOnly}
               />
               <select
                 className="input"
                 value={editForm.location}
                 onChange={(e) => setEditForm((f) => ({ ...f, location: e.target.value }))}
+                disabled={isReadOnly}
               >
                 <option value="Main Branch">Main Branch</option>
                 <option value="Clinic Store">Clinic Store</option>
@@ -568,6 +592,7 @@ export const ProductsPage: React.FC = () => {
                 onChange={(e) =>
                   setEditForm((f) => ({ ...f, status: e.target.value as typeof editForm.status }))
                 }
+                disabled={isReadOnly}
               >
                 <option value="Pending">Pending</option>
                 <option value="Partial">Partial</option>
@@ -575,7 +600,7 @@ export const ProductsPage: React.FC = () => {
                 <option value="Cancelled">Cancelled</option>
               </select>
               <div className="action-stack">
-                <button className="pill" onClick={handleUpdateOrder}>
+                <button className="pill" onClick={handleUpdateOrder} disabled={isReadOnly}>
                   Save Update
                 </button>
                 <button

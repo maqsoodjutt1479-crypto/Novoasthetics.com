@@ -2,9 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { StatusBadge } from '../components/StatusBadge';
 import { usePayments, type Payment, type PaymentMethod } from '../store/usePayments';
 import logo from '../assets/novo-logo.svg';
+import { useAuth } from '../components/AuthProvider';
 
 export const PaymentsPage: React.FC = () => {
   const { payments, addPayment } = usePayments();
+  const { user } = useAuth();
+  const isReadOnly = user?.role === 'fdo';
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [patientId, setPatientId] = useState('');
@@ -24,6 +27,16 @@ export const PaymentsPage: React.FC = () => {
   const normalizeDate = (raw: string) => raw.replace('T', ' ');
   const parseDate = (raw: string) => new Date(normalizeDate(raw));
   const formatMoney = (value?: number) => `PKR ${Math.round(value ?? 0).toLocaleString()}`;
+  const getDiscountValue = (discount: string | undefined, amount: number) => {
+    const raw = (discount || '').trim();
+    if (!raw) return 0;
+    const numeric = Number(raw.replace(/[^0-9.]/g, ''));
+    if (!Number.isFinite(numeric)) return 0;
+    if (/%\s*$/.test(raw)) {
+      return Math.round((amount * numeric) / 100);
+    }
+    return Math.round(numeric);
+  };
 
   const paymentStatus = (p: Payment): 'Paid' | 'Partial' | 'Unpaid' => {
     const settled = (p.cash || 0) + (p.card || 0) + (p.bank || 0) + (p.other || 0);
@@ -63,6 +76,7 @@ export const PaymentsPage: React.FC = () => {
   }, [filtered]);
 
   const handleAdd = () => {
+    if (isReadOnly) return;
     if (!form.patientName.trim()) return;
     const amount = Number(form.amount) || 0;
     const cash = form.cash ? Number(form.cash) : amount;
@@ -75,6 +89,7 @@ export const PaymentsPage: React.FC = () => {
       patientName: form.patientName.trim(),
       method: form.method,
       amount,
+      discount: '0%',
       cash,
       card,
       bank,
@@ -170,7 +185,7 @@ export const PaymentsPage: React.FC = () => {
             value={patientId}
             onChange={(e) => setPatientId(e.target.value)}
           />
-          <button className="pill" onClick={handleAdd}>
+          <button className="pill" onClick={handleAdd} disabled={isReadOnly}>
             + Add Payment
           </button>
           <button className="pill pill--ghost" onClick={handleExport}>
@@ -184,12 +199,14 @@ export const PaymentsPage: React.FC = () => {
             value={form.date}
             onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
             title="Payment date/time"
+            disabled={isReadOnly}
           />
           <input
             className="input"
             placeholder="Patient ID"
             value={form.patientId}
             onChange={(e) => setForm((f) => ({ ...f, patientId: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -197,11 +214,13 @@ export const PaymentsPage: React.FC = () => {
             value={form.patientName}
             onChange={(e) => setForm((f) => ({ ...f, patientName: e.target.value }))}
             required
+            disabled={isReadOnly}
           />
           <select
             className="input"
             value={form.method}
             onChange={(e) => setForm((f) => ({ ...f, method: e.target.value as PaymentMethod }))}
+            disabled={isReadOnly}
           >
             <option value="CASH">Cash</option>
             <option value="CARD">Card</option>
@@ -215,6 +234,7 @@ export const PaymentsPage: React.FC = () => {
             placeholder="Amount"
             value={form.amount}
             onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -224,6 +244,7 @@ export const PaymentsPage: React.FC = () => {
             value={form.cash}
             onChange={(e) => setForm((f) => ({ ...f, cash: e.target.value }))}
             title="Cash received (defaults to amount if left empty)"
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -232,6 +253,7 @@ export const PaymentsPage: React.FC = () => {
             placeholder="Card"
             value={form.card}
             onChange={(e) => setForm((f) => ({ ...f, card: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -240,6 +262,7 @@ export const PaymentsPage: React.FC = () => {
             placeholder="Bank"
             value={form.bank}
             onChange={(e) => setForm((f) => ({ ...f, bank: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -248,12 +271,14 @@ export const PaymentsPage: React.FC = () => {
             placeholder="Other"
             value={form.other}
             onChange={(e) => setForm((f) => ({ ...f, other: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
             placeholder="Source (e.g., appointment, retail)"
             value={form.source}
             onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
+            disabled={isReadOnly}
           />
         </div>
       </div>
@@ -395,6 +420,8 @@ export const PaymentsPage: React.FC = () => {
               <thead>
                 <tr>
                   <th>Total Amount</th>
+                  <th>Discount</th>
+                  <th>Payable</th>
                   <th>Cash</th>
                   <th>Card</th>
                   <th>Bank</th>
@@ -403,7 +430,19 @@ export const PaymentsPage: React.FC = () => {
               </thead>
               <tbody>
                 <tr>
-                  <td>{formatMoney(printingPayment.amount)}</td>
+                  {(() => {
+                    const baseAmount = printingPayment.amount;
+                    const discountValue = getDiscountValue(printingPayment.discount, baseAmount);
+                    const payableAmount = Math.max(0, baseAmount - discountValue);
+                    const discountLabel = (printingPayment.discount || '0%').trim() || '0%';
+                    return (
+                      <>
+                        <td>{formatMoney(baseAmount)}</td>
+                        <td>{`${discountLabel} (${formatMoney(discountValue)})`}</td>
+                        <td>{formatMoney(payableAmount)}</td>
+                      </>
+                    );
+                  })()}
                   <td>{formatMoney(printingPayment.cash)}</td>
                   <td>{formatMoney(printingPayment.card)}</td>
                   <td>{formatMoney(printingPayment.bank)}</td>

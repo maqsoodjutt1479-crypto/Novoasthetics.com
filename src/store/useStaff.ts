@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { hashPassword } from '../utils/password';
 
-export type StaffRole = 'Doctor' | 'Nurse' | 'Reception' | 'Admin' | 'Technician';
+export type StaffRole = 'Doctor' | 'Nurse' | 'Reception' | 'Admin' | 'Technician' | 'FDO';
 
 export type StaffMember = {
   id: string;

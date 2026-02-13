@@ -43,10 +43,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onClose }) => {
   const role = user?.role || 'admin';
 
   const filteredNavItems = useMemo(() => {
-    if (role === 'admin') return navItems;
-    if (role === 'fdo') {
-      return navItems.filter((item) => item.label === 'Appointments' || item.label === 'Payments');
-    }
+    if (role === 'admin' || role === 'fdo') return navItems;
     // Doctor view: only appointments
     return navItems.filter((item) => item.label === 'Appointments');
   }, [role]);

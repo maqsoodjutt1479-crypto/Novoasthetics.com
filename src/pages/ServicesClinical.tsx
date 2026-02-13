@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { StatusBadge } from '../components/StatusBadge';
+import { useAuth } from '../components/AuthProvider';
 import { useClinicalServices } from '../store/useClinicalServices';
 import type { ClinicalService } from '../data/clinicalServices';
 
 export const ServicesClinicalPage: React.FC = () => {
   const { services, addService, removeService, hydrate, isLoading, error } = useClinicalServices();
+  const { user } = useAuth();
+  const isReadOnly = user?.role === 'fdo';
   const [categories, setCategories] = useState<string[]>(() => {
     const base = ['Body Contouring', 'Chemical Peel', 'Laser', 'Facials'];
     const fromServices = services.map((svc) => svc.category);
@@ -49,6 +52,7 @@ export const ServicesClinicalPage: React.FC = () => {
   );
 
   const handleAddCategory = () => {
+    if (isReadOnly) return;
     if (!newCategory.trim()) return;
     if (!categories.includes(newCategory.trim())) {
       setCategories((prev) => [...prev, newCategory.trim()]);
@@ -57,6 +61,7 @@ export const ServicesClinicalPage: React.FC = () => {
   };
 
   const handleAddService = async () => {
+    if (isReadOnly) return;
     if (!form.name || !form.category) return;
     await addService({
       category: form.category,
@@ -79,6 +84,7 @@ export const ServicesClinicalPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
+    if (isReadOnly) return;
     await removeService(id);
   };
 
@@ -97,8 +103,9 @@ export const ServicesClinicalPage: React.FC = () => {
                 placeholder="New Category"
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value)}
+                disabled={isReadOnly}
               />
-              <button className="pill" onClick={handleAddCategory}>
+              <button className="pill" onClick={handleAddCategory} disabled={isReadOnly}>
                 + New Category
               </button>
               <button className="pill pill--ghost" onClick={() => setSelectedCategory('All')}>
@@ -125,6 +132,7 @@ export const ServicesClinicalPage: React.FC = () => {
                           onClick={() => setSelectedCategory(cat)}
                           title="Select category"
                           aria-label="Select category"
+                          disabled={isReadOnly}
                         >
                           <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path
@@ -138,6 +146,7 @@ export const ServicesClinicalPage: React.FC = () => {
                           onClick={() => setNewCategory(cat)}
                           title="Edit category"
                           aria-label="Edit category"
+                          disabled={isReadOnly}
                         >
                           <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path
@@ -151,6 +160,7 @@ export const ServicesClinicalPage: React.FC = () => {
                           onClick={() => setCategories((prev) => prev.filter((c) => c !== cat))}
                           title="Delete category"
                           aria-label="Delete category"
+                          disabled={isReadOnly}
                         >
                           <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path
@@ -180,6 +190,7 @@ export const ServicesClinicalPage: React.FC = () => {
               className="input"
               value={form.category}
               onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+              disabled={isReadOnly}
             >
               <option value="">-- Select Category --</option>
               {categories.map((cat) => (
@@ -193,12 +204,14 @@ export const ServicesClinicalPage: React.FC = () => {
               placeholder="Name"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              disabled={isReadOnly}
             />
             <input
               className="input"
               placeholder="Code (optional)"
               value={form.code}
               onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+              disabled={isReadOnly}
             />
             <input
               className="input"
@@ -207,12 +220,14 @@ export const ServicesClinicalPage: React.FC = () => {
               placeholder="Duration (minutes)"
               value={form.duration}
               onChange={(e) => setForm((f) => ({ ...f, duration: Number(e.target.value) }))}
+              disabled={isReadOnly}
             />
             <input
               className="input"
               type="color"
               value={form.color}
               onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
+              disabled={isReadOnly}
             />
             <input
               className="input"
@@ -221,6 +236,7 @@ export const ServicesClinicalPage: React.FC = () => {
               placeholder="Price"
               value={form.price}
               onChange={(e) => setForm((f) => ({ ...f, price: Number(e.target.value) }))}
+              disabled={isReadOnly}
             />
             <select
               className="input"
@@ -228,11 +244,12 @@ export const ServicesClinicalPage: React.FC = () => {
               onChange={(e) =>
                 setForm((f) => ({ ...f, status: e.target.value as ClinicalService['status'] }))
               }
+              disabled={isReadOnly}
             >
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
             </select>
-            <button className="pill" onClick={handleAddService}>
+            <button className="pill" onClick={handleAddService} disabled={isReadOnly}>
               Save Service
             </button>
           </div>
@@ -315,7 +332,7 @@ export const ServicesClinicalPage: React.FC = () => {
                   </td>
                   <td className="actions-cell">
                     <div className="action-stack">
-                      <button className="icon-btn" title="Edit" aria-label="Edit service">
+                      <button className="icon-btn" title="Edit" aria-label="Edit service" disabled={isReadOnly}>
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                           <path
                             d="M3 17.25V21h3.75l11-11-3.75-3.75-11 11zm2.92 2.83H5v-.92l9.06-9.06.92.92L5.92 20.08zM20.71 7.04a1 1 0 0 0 0-1.41L18.37 3.29a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
@@ -328,6 +345,7 @@ export const ServicesClinicalPage: React.FC = () => {
                         title="Delete"
                         aria-label="Delete service"
                         onClick={() => handleDelete(svc.id)}
+                        disabled={isReadOnly}
                       >
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                           <path

@@ -3,10 +3,13 @@ import { StatusBadge } from '../components/StatusBadge';
 import { packages } from '../data/packages';
 import { useAppointments } from '../store/useAppointments';
 import { usePackageAssignments } from '../store/usePackageAssignments';
+import { useAuth } from '../components/AuthProvider';
 
 export const ServicesPackagesPage: React.FC = () => {
   const { appointments } = useAppointments();
   const { assignments, addAssignment } = usePackageAssignments();
+  const { user } = useAuth();
+  const isReadOnly = user?.role === 'fdo';
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string>('');
   const [search, setSearch] = useState('');
@@ -32,6 +35,7 @@ export const ServicesPackagesPage: React.FC = () => {
     assignments.filter((a) => a.packageName === pkgName).length;
 
   const handleAssign = () => {
+    if (isReadOnly) return;
     if (!selectedPackage || !selectedAppointmentId) return;
     const selected = patientOptions.find((p) => p.id === selectedAppointmentId);
     if (!selected) return;
@@ -54,7 +58,9 @@ export const ServicesPackagesPage: React.FC = () => {
             <div className="section__title">Packages</div>
             <div className="muted">Bundle multiple services; choose active / inactive</div>
           </div>
-          <button className="pill">+ New Package</button>
+          <button className="pill" disabled={isReadOnly}>
+            + New Package
+          </button>
         </div>
         <div className="card-grid">
           {packages.map((pkg) => (
@@ -81,6 +87,7 @@ export const ServicesPackagesPage: React.FC = () => {
                     title="Assign patient"
                     aria-label="Assign patient"
                     onClick={() => setSelectedPackage(pkg.name)}
+                    disabled={isReadOnly}
                   >
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path
@@ -89,7 +96,9 @@ export const ServicesPackagesPage: React.FC = () => {
                       />
                     </svg>
                   </button>
-                  <button className="pill pill--ghost">Show on website</button>
+                  <button className="pill pill--ghost" disabled={isReadOnly}>
+                    Show on website
+                  </button>
                 </div>
               </div>
             </div>
@@ -118,11 +127,13 @@ export const ServicesPackagesPage: React.FC = () => {
                 placeholder="Search patient by name, phone, or ID"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                disabled={isReadOnly}
               />
               <select
                 className="input"
                 value={selectedAppointmentId}
                 onChange={(e) => setSelectedAppointmentId(e.target.value)}
+                disabled={isReadOnly}
               >
                 <option value="">-- Select Patient --</option>
                 {filteredOptions.map((p) => (
@@ -132,7 +143,7 @@ export const ServicesPackagesPage: React.FC = () => {
                 ))}
               </select>
               <div className="action-stack">
-                <button className="pill" onClick={handleAssign}>
+                <button className="pill" onClick={handleAssign} disabled={isReadOnly}>
                   Assign
                 </button>
                 <button className="pill pill--ghost" onClick={() => setSelectedPackage(null)}>

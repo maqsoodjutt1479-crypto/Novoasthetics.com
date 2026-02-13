@@ -5,7 +5,7 @@ import { useStaff } from '../store/useStaff';
 import logo from '../assets/novo-logo.svg';
 
 const ADMIN_EMAIL = 'admin.novoasthetics@novo-asthetics.com';
-const ADMIN_PASS = '786/Novo@dmin345';
+const ADMIN_PASS = 'admin@nova123';
 
 export const LoginPage: React.FC = () => {
   const { setRole } = useAuth();
@@ -50,6 +50,10 @@ export const LoginPage: React.FC = () => {
       setRole('doctor', staffMember.name);
       navigate('/appointments', { replace: true });
     } else {
+      if (staffMember.role !== 'FDO') {
+        setInfo('This account is not FDO. Use FDO role to sign in as FDO.');
+        return;
+      }
       setRole('fdo');
       navigate('/appointments', { replace: true });
     }

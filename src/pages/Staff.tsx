@@ -2,9 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { StatusBadge } from '../components/StatusBadge';
 import { useStaff, type StaffRole, type StaffMember } from '../store/useStaff';
 import { hashPassword } from '../utils/password';
+import { useAuth } from '../components/AuthProvider';
 
 export const StaffPage: React.FC = () => {
   const { staff, addStaff, updateStatus, removeStaff } = useStaff();
+  const { user } = useAuth();
+  const isReadOnly = user?.role === 'fdo';
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState<'All' | StaffRole>('All');
   const [form, setForm] = useState({
@@ -35,6 +38,7 @@ export const StaffPage: React.FC = () => {
   );
 
   const handleAdd = async () => {
+    if (isReadOnly) return;
     setFormError('');
     if (!form.name || !form.phone || !form.email) {
       setFormError('Name, phone, and email are required.');
@@ -73,12 +77,14 @@ export const StaffPage: React.FC = () => {
   };
 
   const toggleStatus = (id: string) => {
+    if (isReadOnly) return;
     const current = staff.find((s) => s.id === id);
     if (!current) return;
     updateStatus(id, current.status === 'Active' ? 'Inactive' : 'Active');
   };
 
   const handleDelete = (id: string) => {
+    if (isReadOnly) return;
     removeStaff(id);
   };
 
@@ -90,7 +96,7 @@ export const StaffPage: React.FC = () => {
             <div className="section__title">Add Doctor / Staff</div>
             <div className="muted">Create profiles for doctors, nurses, reception, technicians, or admins</div>
           </div>
-          <button className="pill" onClick={handleAdd}>
+          <button className="pill" onClick={handleAdd} disabled={isReadOnly}>
             Save Team Member
           </button>
         </div>
@@ -100,19 +106,22 @@ export const StaffPage: React.FC = () => {
             placeholder="Full Name"
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            disabled={isReadOnly}
           />
-          <select className="input" value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as StaffRole }))}>
+          <select className="input" value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as StaffRole }))} disabled={isReadOnly}>
             <option value="Doctor">Doctor</option>
             <option value="Nurse">Nurse</option>
             <option value="Reception">Reception</option>
             <option value="Admin">Admin</option>
             <option value="Technician">Technician</option>
+            <option value="FDO">FDO</option>
           </select>
           <input
             className="input"
             placeholder="Mobile"
             value={form.phone}
             onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -120,6 +129,7 @@ export const StaffPage: React.FC = () => {
             placeholder="Email"
             value={form.email}
             onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -128,6 +138,7 @@ export const StaffPage: React.FC = () => {
             value={form.password}
             onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
             autoComplete="new-password"
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -136,23 +147,27 @@ export const StaffPage: React.FC = () => {
             value={form.confirmPassword}
             onChange={(e) => setForm((f) => ({ ...f, confirmPassword: e.target.value }))}
             autoComplete="new-password"
+            disabled={isReadOnly}
           />
           <input
             className="input"
             placeholder="Specialty (e.g., Laser, PRP)"
             value={form.specialty}
             onChange={(e) => setForm((f) => ({ ...f, specialty: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
             placeholder="Branch (e.g., Main / Clinic Store)"
             value={form.branch}
             onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))}
+            disabled={isReadOnly}
           />
           <select
             className="input"
             value={form.status}
             onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as StaffMember['status'] }))}
+            disabled={isReadOnly}
           >
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
@@ -181,6 +196,7 @@ export const StaffPage: React.FC = () => {
               <option value="Reception">Reception</option>
               <option value="Admin">Admin</option>
               <option value="Technician">Technician</option>
+              <option value="FDO">FDO</option>
             </select>
             <button className="pill pill--ghost" onClick={() => { setSearch(''); setFilterRole('All'); }}>
               Clear
@@ -220,6 +236,7 @@ export const StaffPage: React.FC = () => {
                           type="checkbox"
                           checked={member.status === 'Active'}
                           onChange={() => toggleStatus(member.id)}
+                          disabled={isReadOnly}
                         />
                         <span className="toggle__slider" />
                       </label>
@@ -228,10 +245,10 @@ export const StaffPage: React.FC = () => {
                   </td>
                   <td className="actions-cell">
                     <div className="action-stack">
-                      <button className="pill pill--ghost" onClick={() => toggleStatus(member.id)}>
+                      <button className="pill pill--ghost" onClick={() => toggleStatus(member.id)} disabled={isReadOnly}>
                         {member.status === 'Active' ? 'Deactivate' : 'Activate'}
                       </button>
-                      <button className="pill pill--ghost" onClick={() => handleDelete(member.id)}>
+                      <button className="pill pill--ghost" onClick={() => handleDelete(member.id)} disabled={isReadOnly}>
                         Delete
                       </button>
                     </div>

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { StatusBadge } from '../components/StatusBadge';
+import { useAuth } from '../components/AuthProvider';
 
 type MembershipType = {
   id: string;
@@ -36,6 +37,8 @@ const initialTypes: MembershipType[] = [
 ];
 
 export const ServicesMembershipPage: React.FC = () => {
+  const { user } = useAuth();
+  const isReadOnly = user?.role === 'fdo';
   const [types, setTypes] = useState<MembershipType[]>(initialTypes);
   const [filter, setFilter] = useState('');
   const [form, setForm] = useState({
@@ -59,6 +62,7 @@ export const ServicesMembershipPage: React.FC = () => {
   );
 
   const handleSave = () => {
+    if (isReadOnly) return;
     if (!form.name || !form.code) return;
     if (form.editingId) {
       setTypes((prev) =>
@@ -103,6 +107,7 @@ export const ServicesMembershipPage: React.FC = () => {
   };
 
   const handleEdit = (t: MembershipType) => {
+    if (isReadOnly) return;
     setForm({
       name: t.name,
       code: t.code,
@@ -115,10 +120,12 @@ export const ServicesMembershipPage: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
+    if (isReadOnly) return;
     setTypes((prev) => prev.filter((t) => t.id !== id));
   };
 
   const handleToggleStatus = (id: string) => {
+    if (isReadOnly) return;
     setTypes((prev) =>
       prev.map((t) => (t.id === id ? { ...t, status: t.status === 'Active' ? 'Inactive' : 'Active' } : t))
     );
@@ -140,12 +147,14 @@ export const ServicesMembershipPage: React.FC = () => {
             placeholder="Name *"
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
             placeholder="Code *"
             value={form.code}
             onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -154,6 +163,7 @@ export const ServicesMembershipPage: React.FC = () => {
             placeholder="Duration (days)"
             value={form.durationDays}
             onChange={(e) => setForm((f) => ({ ...f, durationDays: Number(e.target.value) }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -162,6 +172,7 @@ export const ServicesMembershipPage: React.FC = () => {
             placeholder="Base Price"
             value={form.basePrice}
             onChange={(e) => setForm((f) => ({ ...f, basePrice: Number(e.target.value) }))}
+            disabled={isReadOnly}
           />
           <input
             className="input"
@@ -170,16 +181,18 @@ export const ServicesMembershipPage: React.FC = () => {
             placeholder="Family Limit (optional)"
             value={form.familyLimit}
             onChange={(e) => setForm((f) => ({ ...f, familyLimit: e.target.value }))}
+            disabled={isReadOnly}
           />
           <select
             className="input"
             value={form.status}
             onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as MembershipType['status'] }))}
+            disabled={isReadOnly}
           >
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
           </select>
-          <button className="pill" onClick={handleSave}>
+          <button className="pill" onClick={handleSave} disabled={isReadOnly}>
             {form.editingId ? 'Update Type' : 'Save Type'}
           </button>
         </div>
@@ -192,12 +205,12 @@ export const ServicesMembershipPage: React.FC = () => {
             <div className="muted">Edit / Activate / Delete / Family Limit</div>
           </div>
           <div className="filter-bar">
-            <input
-              className="input"
-              placeholder="Search by name or code..."
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-            />
+          <input
+            className="input"
+            placeholder="Search by name or code..."
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
             <button className="pill pill--ghost" onClick={() => setFilter('')}>
               Clear
             </button>
@@ -233,6 +246,7 @@ export const ServicesMembershipPage: React.FC = () => {
                           type="checkbox"
                           checked={t.status === 'Active'}
                           onChange={() => handleToggleStatus(t.id)}
+                          disabled={isReadOnly}
                         />
                         <span className="toggle__slider" />
                       </label>
@@ -241,17 +255,18 @@ export const ServicesMembershipPage: React.FC = () => {
                   </td>
                   <td className="actions-cell">
                     <div className="action-stack">
-                      <button className="icon-btn" title="Edit" onClick={() => handleEdit(t)}>
+                      <button className="icon-btn" title="Edit" onClick={() => handleEdit(t)} disabled={isReadOnly}>
                         Edit
                       </button>
                       <button
                         className="icon-btn"
                         title={t.status === 'Active' ? 'Deactivate' : 'Activate'}
                         onClick={() => handleToggleStatus(t.id)}
+                        disabled={isReadOnly}
                       >
                         {t.status === 'Active' ? 'Deactivate' : 'Activate'}
                       </button>
-                      <button className="icon-btn" title="Delete" onClick={() => handleDelete(t.id)}>
+                      <button className="icon-btn" title="Delete" onClick={() => handleDelete(t.id)} disabled={isReadOnly}>
                         Delete
                       </button>
                     </div>
@@ -269,7 +284,9 @@ export const ServicesMembershipPage: React.FC = () => {
             <div className="section__title">Membership Cards</div>
             <div className="muted">Link benefits with appointments & services</div>
           </div>
-          <button className="pill">+ Issue Membership</button>
+          <button className="pill" disabled={isReadOnly}>
+            + Issue Membership
+          </button>
         </div>
         <div className="card-grid">
           {sampleCards.map((m) => (

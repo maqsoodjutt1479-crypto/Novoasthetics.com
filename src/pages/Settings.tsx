@@ -1,8 +1,11 @@
 import React from 'react';
 import { useTheme } from '../components/ThemeProvider';
+import { useAuth } from '../components/AuthProvider';
 
 export const SettingsPage: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
+  const { user } = useAuth();
+  const isReadOnly = user?.role === 'fdo';
 
   return (
     <div className="stack">
@@ -19,7 +22,7 @@ export const SettingsPage: React.FC = () => {
               <div className="strong">Theme</div>
               <div className="muted small">Light / Dark mode</div>
             </div>
-            <button className="pill" onClick={toggleTheme}>
+            <button className="pill" onClick={toggleTheme} disabled={isReadOnly}>
               {theme === 'light' ? 'Switch to Dark' : 'Switch to Light'}
             </button>
           </div>
@@ -29,7 +32,7 @@ export const SettingsPage: React.FC = () => {
               <div className="muted small">New orders, low stock alerts</div>
             </div>
             <label className="toggle">
-              <input type="checkbox" defaultChecked />
+              <input type="checkbox" defaultChecked disabled={isReadOnly} />
               <span className="toggle__slider" />
             </label>
           </div>
@@ -38,7 +41,7 @@ export const SettingsPage: React.FC = () => {
               <div className="strong">Default Doctor</div>
               <div className="muted small">Used when creating appointments</div>
             </div>
-            <select className="input">
+            <select className="input" disabled={isReadOnly}>
               <option>Dr. Khan</option>
               <option>Dr. Fatima</option>
               <option>Dr. Ali</option>

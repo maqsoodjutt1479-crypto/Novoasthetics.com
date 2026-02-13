@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { StatusBadge } from '../components/StatusBadge';
+import { useAuth } from '../components/AuthProvider';
 import { useAppointments, type Appointment } from '../store/useAppointments';
 
 type PatientRow = {
@@ -42,6 +43,8 @@ const persistFollowUps = (rows: Record<string, string>) => {
 
 export const PatientsPage: React.FC = () => {
   const { appointments, updateStatus } = useAppointments();
+  const { user } = useAuth();
+  const isReadOnly = user?.role === 'fdo';
   const [search, setSearch] = useState('');
   const [followUps, setFollowUps] = useState<Record<string, string>>(loadFollowUps);
   const [historyKey, setHistoryKey] = useState<string | null>(null);
@@ -110,6 +113,7 @@ export const PatientsPage: React.FC = () => {
   }, [selectedHistory]);
 
   const handleCancel = (id: string) => {
+    if (isReadOnly) return;
     updateStatus(id, 'Cancelled');
   };
 
@@ -171,7 +175,7 @@ export const PatientsPage: React.FC = () => {
                       <button
                         className="pill pill--ghost"
                         onClick={() => handleCancel(row.id)}
-                        disabled={row.status !== 'Pending'}
+                        disabled={isReadOnly || row.status !== 'Pending'}
                         title={row.status !== 'Pending' ? 'Cancel available only for Pending' : ''}
                       >
                         Cancel
@@ -241,6 +245,7 @@ export const PatientsPage: React.FC = () => {
                       className="input input--tiny"
                       value={followUps[p.key] || ''}
                       onChange={(e) => setFollowUps((prev) => ({ ...prev, [p.key]: e.target.value }))}
+                      disabled={isReadOnly}
                     />
                   </td>
                   <td>

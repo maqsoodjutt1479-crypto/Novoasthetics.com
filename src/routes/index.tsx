@@ -63,7 +63,7 @@ export const AppRoutes: React.FC = () => (
       path="/patients"
       element={
         <PrivateRoute>
-          <RoleGuard allowed={['admin']} fallback="/appointments">
+          <RoleGuard allowed={['admin', 'fdo']} fallback="/appointments">
             <AppLayout title="Patients / Treatment">
               <PatientsPage />
             </AppLayout>
@@ -75,7 +75,7 @@ export const AppRoutes: React.FC = () => (
       path="/services/clinical"
       element={
         <PrivateRoute>
-          <RoleGuard allowed={['admin']} fallback="/appointments">
+          <RoleGuard allowed={['admin', 'fdo']} fallback="/appointments">
             <AppLayout title="Clinical Services">
               <ServicesClinicalPage />
             </AppLayout>
@@ -87,7 +87,7 @@ export const AppRoutes: React.FC = () => (
       path="/services/packages"
       element={
         <PrivateRoute>
-          <RoleGuard allowed={['admin']} fallback="/appointments">
+          <RoleGuard allowed={['admin', 'fdo']} fallback="/appointments">
             <AppLayout title="Packages">
               <ServicesPackagesPage />
             </AppLayout>
@@ -99,7 +99,7 @@ export const AppRoutes: React.FC = () => (
       path="/services/membership"
       element={
         <PrivateRoute>
-          <RoleGuard allowed={['admin']} fallback="/appointments">
+          <RoleGuard allowed={['admin', 'fdo']} fallback="/appointments">
             <AppLayout title="Membership">
               <ServicesMembershipPage />
             </AppLayout>
@@ -111,7 +111,7 @@ export const AppRoutes: React.FC = () => (
       path="/products"
       element={
         <PrivateRoute>
-          <RoleGuard allowed={['admin']} fallback="/appointments">
+          <RoleGuard allowed={['admin', 'fdo']} fallback="/appointments">
             <AppLayout title="Products">
               <ProductsPage />
             </AppLayout>
@@ -135,7 +135,7 @@ export const AppRoutes: React.FC = () => (
       path="/reports"
       element={
         <PrivateRoute>
-          <RoleGuard allowed={['admin']} fallback="/appointments">
+          <RoleGuard allowed={['admin', 'fdo']} fallback="/appointments">
             <AppLayout title="Reports">
               <ReportsPage />
             </AppLayout>
@@ -147,7 +147,7 @@ export const AppRoutes: React.FC = () => (
       path="/settings"
       element={
         <PrivateRoute>
-          <RoleGuard allowed={['admin']} fallback="/appointments">
+          <RoleGuard allowed={['admin', 'fdo']} fallback="/appointments">
             <AppLayout title="Settings">
               <SettingsPage />
             </AppLayout>
@@ -159,7 +159,7 @@ export const AppRoutes: React.FC = () => (
       path="/staff"
       element={
         <PrivateRoute>
-          <RoleGuard allowed={['admin']} fallback="/appointments">
+          <RoleGuard allowed={['admin', 'fdo']} fallback="/appointments">
             <AppLayout title="Doctors & Staff">
               <StaffPage />
             </AppLayout>
@@ -174,7 +174,7 @@ export const AppRoutes: React.FC = () => (
 const RootRoute: React.FC = () => {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role !== 'admin') return <Navigate to="/appointments" replace />;
+  if (user.role === 'doctor') return <Navigate to="/appointments" replace />;
   return (
     <AppLayout title="Dashboard">
       <DashboardPage />

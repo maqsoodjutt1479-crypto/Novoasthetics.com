@@ -9,6 +9,7 @@ export type Payment = {
   patientName: string;
   method: PaymentMethod;
   amount: number;
+  discount?: string;
   cash: number;
   card: number;
   bank: number;
