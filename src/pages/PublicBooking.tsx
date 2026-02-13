@@ -66,7 +66,7 @@ export const PublicBookingPage: React.FC = () => {
   const [typing, setTyping] = useState(false);
 
   const availability = useMemo<Record<string, Record<string, Slot[]>>>(() => {
-    const build = (freeTimes: string[], bookedTimes: string[] = [], heldTimes: string[] = []) =>
+    const build = (freeTimes: string[], bookedTimes: string[] = [], heldTimes: string[] = []): Slot[] =>
       freeTimes.map((t) => ({
         time: t,
         status: bookedTimes.includes(t) ? 'booked' : heldTimes.includes(t) ? 'held' : 'free',
