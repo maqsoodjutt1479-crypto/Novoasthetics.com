@@ -16,6 +16,7 @@ export type Order = {
   products: string;
   qty: number;
   unitPrice: number;
+  items?: Array<{ name: string; qty: number; unitPrice: number }>;
   location: string;
   total: number;
   paid: number;
@@ -28,7 +29,14 @@ type ProductSalesState = {
   products: ProductRow[];
   orders: Order[];
   addProduct: (product: Omit<ProductRow, 'id'>) => ProductRow;
-  addOrder: (payload: Omit<Order, 'id' | 'status' | 'createdAt'>) => Order | null;
+  addOrder: (payload: {
+    patient: string;
+    patientId?: string;
+    items: Array<{ name: string; qty: number; unitPrice: number }>;
+    location: string;
+    paid: number;
+    method: 'CASH' | 'CARD' | 'BANK_TRANSFER' | 'OTHER';
+  }) => Order | null;
   updateOrder: (id: string, changes: Partial<Order>) => void;
   adjustInventoryForEdit: (prev: Order, next: Order) => void;
 };
@@ -90,29 +98,50 @@ export const useProductSales = create<ProductSalesState>((set) => ({
   addOrder: (payload) => {
     let created: Order | null = null;
     set((state) => {
-      const productName = payload.products.split(' x')[0];
-      const productIndex = state.products.findIndex((p) => p.name === productName);
-      if (productIndex === -1) return state;
-      const product = state.products[productIndex];
-      if (product.stock < payload.qty) return state;
+      const items = payload.items
+        .filter((item) => item.name && item.qty > 0)
+        .map((item) => ({ ...item, qty: Math.floor(item.qty) }));
+      if (items.length === 0) return state;
+      const requiredByName = new Map<string, number>();
+      for (const item of items) {
+        requiredByName.set(item.name, (requiredByName.get(item.name) || 0) + item.qty);
+      }
+      for (const [name, qty] of requiredByName.entries()) {
+        const product = state.products.find((p) => p.name === name);
+        if (!product) return state;
+        if (product.stock < qty) return state;
+      }
+      const total = items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
       const status =
-        payload.paid >= payload.total
+        payload.paid >= total
           ? 'Paid'
           : payload.paid > 0
           ? 'Partial'
           : 'Pending';
       created = {
-        ...payload,
+        patient: payload.patient,
+        patientId: payload.patientId,
+        items,
+        products: items.map((item) => `${item.name} x${item.qty}`).join(', '),
+        qty: items.reduce((sum, item) => sum + item.qty, 0),
+        unitPrice: items.length === 1 ? items[0].unitPrice : 0,
         id: `PO-${Math.floor(1000 + Math.random() * 9000)}`,
         status,
         createdAt: new Date().toISOString(),
+        location: payload.location,
+        total,
+        paid: payload.paid,
+        method: payload.method,
       };
-      const nextProducts = [...state.products];
-      nextProducts[productIndex] = {
-        ...product,
-        stock: Math.max(0, product.stock - payload.qty),
-        sold: product.sold + payload.qty,
-      };
+      const nextProducts = state.products.map((product) => {
+        const used = requiredByName.get(product.name);
+        if (!used) return product;
+        return {
+          ...product,
+          stock: Math.max(0, product.stock - used),
+          sold: product.sold + used,
+        };
+      });
       const nextOrders = [created, ...state.orders];
       persistRows(PRODUCTS_KEY, nextProducts);
       persistRows(ORDERS_KEY, nextOrders);
@@ -128,6 +157,9 @@ export const useProductSales = create<ProductSalesState>((set) => ({
     }),
   adjustInventoryForEdit: (prev, next) =>
     set((state) => {
+      if ((prev.items && prev.items.length > 1) || (next.items && next.items.length > 1)) {
+        return state;
+      }
       const [prevName] = prev.products.split(' x');
       const [nextName] = next.products.split(' x');
       const prevProductIndex = state.products.findIndex((p) => p.name === prevName);

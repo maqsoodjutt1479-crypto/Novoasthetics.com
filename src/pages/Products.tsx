@@ -30,12 +30,13 @@ export const ProductsPage: React.FC = () => {
   const [saleForm, setSaleForm] = useState({
     patient: '',
     patientId: '',
-    productName: '',
-    qty: 1,
     location: 'Main Branch',
     paid: '',
     method: 'CASH' as PaymentMethod,
   });
+  const [saleItems, setSaleItems] = useState<Array<{ productName: string; qty: number }>>([
+    { productName: '', qty: 1 },
+  ]);
   const [productForm, setProductForm] = useState({
     name: '',
     price: '',
@@ -71,34 +72,50 @@ export const ProductsPage: React.FC = () => {
   const handleCreateSale = () => {
     if (isReadOnly) return;
     setSaleError('');
-    const product = products.find((p) => p.name === saleForm.productName);
     if (!saleForm.patient.trim()) {
       setSaleError('Please enter patient name.');
       return;
     }
-    if (!product) {
-      setSaleError('Please select a product.');
+    const cleanItems = saleItems
+      .map((item) => ({
+        productName: item.productName,
+        qty: Math.floor(item.qty),
+      }))
+      .filter((item) => item.productName && item.qty > 0);
+    if (cleanItems.length === 0) {
+      setSaleError('Please add at least one product.');
       return;
     }
-    if (saleForm.qty < 1) {
-      setSaleError('Quantity must be at least 1.');
-      return;
+    const requiredByName = new Map<string, number>();
+    for (const item of cleanItems) {
+      requiredByName.set(item.productName, (requiredByName.get(item.productName) || 0) + item.qty);
     }
-    if (product.stock < saleForm.qty) {
-      setSaleError('Not enough stock for this sale.');
-      return;
+    for (const [name, qty] of requiredByName.entries()) {
+      const product = products.find((p) => p.name === name);
+      if (!product) {
+        setSaleError('Please select a valid product.');
+        return;
+      }
+      if (product.stock < qty) {
+        setSaleError(`Not enough stock for ${name}.`);
+        return;
+      }
     }
-    const total = product.price * saleForm.qty;
+    const items = cleanItems.map((item) => {
+      const product = products.find((p) => p.name === item.productName)!;
+      return {
+        name: product.name,
+        qty: item.qty,
+        unitPrice: product.price,
+      };
+    });
+    const total = items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
     const paid = Number(saleForm.paid) || 0;
-    const productsLabel = `${product.name} x${saleForm.qty}`;
     const created = addOrder({
       patient: saleForm.patient.trim(),
       patientId: saleForm.patientId.trim() || undefined,
-      products: productsLabel,
-      qty: saleForm.qty,
-      unitPrice: product.price,
+      items,
       location: saleForm.location,
-      total,
       paid,
       method: saleForm.method,
     });
@@ -121,13 +138,23 @@ export const ProductsPage: React.FC = () => {
     setSaleForm({
       patient: '',
       patientId: '',
-      productName: '',
-      qty: 1,
       location: 'Main Branch',
       paid: '',
       method: 'CASH',
     });
+    setSaleItems([{ productName: '', qty: 1 }]);
     setSaleOpen(false);
+  };
+
+  const addSaleItem = () => {
+    setSaleItems((items) => [...items, { productName: '', qty: 1 }]);
+  };
+
+  const removeSaleItem = (index: number) => {
+    setSaleItems((items) => {
+      if (items.length === 1) return items;
+      return items.filter((_, idx) => idx !== index);
+    });
   };
 
   const openEdit = (order: (typeof orders)[number]) => {
@@ -137,8 +164,8 @@ export const ProductsPage: React.FC = () => {
       paid: String(order.paid ?? 0),
       status: order.status,
       method: order.method || 'CASH',
-      productName: order.products.split(' x')[0],
-      qty: order.qty,
+      productName: order.items && order.items.length === 1 ? order.items[0].name : order.products.split(' x')[0],
+      qty: order.items && order.items.length === 1 ? order.items[0].qty : order.qty,
       location: order.location,
     });
   };
@@ -148,6 +175,34 @@ export const ProductsPage: React.FC = () => {
     if (!editingOrder) return;
     const paid = Number(editForm.paid) || 0;
     const deltaPaid = Math.max(0, paid - editingOrder.paid);
+    if (editingOrder.items && editingOrder.items.length > 1) {
+      let statusValue = editForm.status;
+      if (statusValue !== 'Cancelled') {
+        statusValue = paid >= editingOrder.total ? 'Paid' : paid > 0 ? 'Partial' : 'Pending';
+      }
+      updateOrder(editingOrder.id, {
+        paid,
+        method: editForm.method,
+        status: statusValue,
+        location: editForm.location,
+      });
+      if (deltaPaid > 0) {
+        addPayment({
+          date: new Date().toISOString().slice(0, 16).replace('T', ' '),
+          patientId: editingOrder.patientId || 'N/A',
+          patientName: editingOrder.patient,
+          method: editForm.method,
+          amount: deltaPaid,
+          cash: editForm.method === 'CASH' ? deltaPaid : 0,
+          card: editForm.method === 'CARD' ? deltaPaid : 0,
+          bank: editForm.method === 'BANK_TRANSFER' ? deltaPaid : 0,
+          other: editForm.method === 'OTHER' ? deltaPaid : 0,
+          source: 'product',
+        });
+      }
+      setEditingOrder(null);
+      return;
+    }
     const product = products.find((p) => p.name === editForm.productName);
     if (!product) return;
     const prevProductName = editingOrder.products.split(' x')[0];
@@ -453,28 +508,62 @@ export const ProductsPage: React.FC = () => {
                 onChange={(e) => setSaleForm((f) => ({ ...f, patientId: e.target.value }))}
                 disabled={isReadOnly}
               />
-              <select
-                className="input"
-                value={saleForm.productName}
-                onChange={(e) => setSaleForm((f) => ({ ...f, productName: e.target.value }))}
-                disabled={isReadOnly}
-              >
-                <option value="">-- Select Product --</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.name}>
-                    {p.name} (stock: {p.stock})
-                  </option>
-                ))}
-              </select>
-              <input
-                className="input"
-                type="number"
-                min="1"
-                placeholder="Quantity"
-                value={saleForm.qty}
-                onChange={(e) => setSaleForm((f) => ({ ...f, qty: Number(e.target.value) }))}
-                disabled={isReadOnly}
-              />
+              {saleItems.map((item, index) => (
+                <React.Fragment key={`sale-item-${index}`}>
+                  <select
+                    className="input"
+                    value={item.productName}
+                    onChange={(e) =>
+                      setSaleItems((items) =>
+                        items.map((row, idx) =>
+                          idx === index ? { ...row, productName: e.target.value } : row
+                        )
+                      )
+                    }
+                    disabled={isReadOnly}
+                  >
+                    <option value="">-- Select Product --</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.name}>
+                        {p.name} (stock: {p.stock})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="form-grid" style={{ gridColumn: '1 / -1', gridTemplateColumns: '2fr 1fr auto', gap: 12 }}>
+                    <input
+                      className="input"
+                      type="number"
+                      min="1"
+                      placeholder="Quantity"
+                      value={item.qty}
+                      onChange={(e) =>
+                        setSaleItems((items) =>
+                          items.map((row, idx) =>
+                            idx === index ? { ...row, qty: Number(e.target.value) } : row
+                          )
+                        )
+                      }
+                      disabled={isReadOnly}
+                    />
+                    <div className="muted small" style={{ alignSelf: 'center' }}>
+                      {item.productName
+                        ? `Unit: PKR ${products.find((p) => p.name === item.productName)?.price?.toLocaleString() ?? '-'}`
+                        : 'Pick a product'}
+                    </div>
+                    <button
+                      className="pill pill--ghost"
+                      type="button"
+                      onClick={() => removeSaleItem(index)}
+                      disabled={isReadOnly || saleItems.length === 1}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </React.Fragment>
+              ))}
+              <button className="pill pill--ghost" type="button" onClick={addSaleItem} disabled={isReadOnly}>
+                + Add Product
+              </button>
               <select
                 className="input"
                 value={saleForm.location}
@@ -556,27 +645,35 @@ export const ProductsPage: React.FC = () => {
                 <option value="BANK_TRANSFER">Bank Transfer</option>
                 <option value="OTHER">Other</option>
               </select>
-              <select
-                className="input"
-                value={editForm.productName}
-                onChange={(e) => setEditForm((f) => ({ ...f, productName: e.target.value }))}
-                disabled={isReadOnly}
-              >
-                {products.map((p) => (
-                  <option key={p.id} value={p.name}>
-                    {p.name} (stock: {p.stock})
-                  </option>
-                ))}
-              </select>
-              <input
-                className="input"
-                type="number"
-                min="1"
-                placeholder="Quantity"
-                value={editForm.qty}
-                onChange={(e) => setEditForm((f) => ({ ...f, qty: Number(e.target.value) }))}
-                disabled={isReadOnly}
-              />
+              {editingOrder.items && editingOrder.items.length > 1 ? (
+                <div className="muted small">
+                  This order has multiple products. You can update payment, status, and location only.
+                </div>
+              ) : (
+                <>
+                  <select
+                    className="input"
+                    value={editForm.productName}
+                    onChange={(e) => setEditForm((f) => ({ ...f, productName: e.target.value }))}
+                    disabled={isReadOnly}
+                  >
+                    {products.map((p) => (
+                      <option key={p.id} value={p.name}>
+                        {p.name} (stock: {p.stock})
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    className="input"
+                    type="number"
+                    min="1"
+                    placeholder="Quantity"
+                    value={editForm.qty}
+                    onChange={(e) => setEditForm((f) => ({ ...f, qty: Number(e.target.value) }))}
+                    disabled={isReadOnly}
+                  />
+                </>
+              )}
               <select
                 className="input"
                 value={editForm.location}
@@ -671,14 +768,34 @@ export const ProductsPage: React.FC = () => {
               <span>Products</span>
               <div>{printingOrder.products}</div>
             </div>
-            <div className="consultation-field">
-              <span>Unit Price</span>
-              <div>PKR {Math.round((printingOrder.unitPrice || printingOrder.total / Math.max(1, printingOrder.qty)) as number).toLocaleString()}</div>
-            </div>
-            <div className="consultation-field">
-              <span>Quantity</span>
-              <div>{printingOrder.qty}</div>
-            </div>
+            {printingOrder.items && printingOrder.items.length > 1 ? (
+              <div className="consultation-field consultation-field--wide">
+                <span>Line Items</span>
+                <div>
+                  {printingOrder.items.map((item) => (
+                    <div key={`${item.name}-${item.qty}`} className="muted small">
+                      {item.name} x{item.qty} @ PKR {item.unitPrice.toLocaleString()}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="consultation-field">
+                  <span>Unit Price</span>
+                  <div>
+                    PKR{' '}
+                    {Math.round(
+                      (printingOrder.unitPrice || printingOrder.total / Math.max(1, printingOrder.qty)) as number
+                    ).toLocaleString()}
+                  </div>
+                </div>
+                <div className="consultation-field">
+                  <span>Quantity</span>
+                  <div>{printingOrder.qty}</div>
+                </div>
+              </>
+            )}
             <div className="consultation-field">
               <span>Total</span>
               <div>PKR {printingOrder.total.toLocaleString()}</div>
