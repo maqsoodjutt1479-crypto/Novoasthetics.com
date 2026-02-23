@@ -931,7 +931,6 @@ export const AppointmentsPage: React.FC = () => {
         <section className="consultation-print">
           {(() => {
             const serviceNames = splitServices(printAppointment.service);
-            const hasMultiple = serviceNames.length > 1;
             const treatmentRows = serviceNames.map((name) => ({
               name,
               price: servicePriceMap.get(name) ?? 0,
@@ -1032,7 +1031,7 @@ export const AppointmentsPage: React.FC = () => {
             </section>
           )}
 
-          {hasMultiple && (
+          {treatmentRows.length > 0 && (
             <section className="consultation-block">
               <div className="consultation-block__title">Selected Treatments</div>
               <table className="consultation-table">

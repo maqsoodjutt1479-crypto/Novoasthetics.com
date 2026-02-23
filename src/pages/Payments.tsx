@@ -440,10 +440,10 @@ export const PaymentsPage: React.FC = () => {
                         <td>{formatMoney(baseAmount)}</td>
                         <td>{`${discountLabel} (${formatMoney(discountValue)})`}</td>
                         <td>{formatMoney(payableAmount)}</td>
+                        <td>{formatMoney(payableAmount)}</td>
                       </>
                     );
                   })()}
-                  <td>{formatMoney(printingPayment.cash)}</td>
                   <td>{formatMoney(printingPayment.card)}</td>
                   <td>{formatMoney(printingPayment.bank)}</td>
                   <td>{formatMoney(printingPayment.other)}</td>
