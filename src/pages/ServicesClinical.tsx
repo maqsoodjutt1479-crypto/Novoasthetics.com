@@ -3,11 +3,13 @@ import { StatusBadge } from '../components/StatusBadge';
 import { useAuth } from '../components/AuthProvider';
 import { useClinicalServices } from '../store/useClinicalServices';
 import type { ClinicalService } from '../data/clinicalServices';
+import { FilterXIcon, PlusIcon, RefreshIcon, XIcon } from '../components/UiIcons';
 
 export const ServicesClinicalPage: React.FC = () => {
-  const { services, addService, removeService, hydrate, isLoading, error } = useClinicalServices();
+  const { services, addService, updateService, removeService, hydrate, isLoading, error } = useClinicalServices();
   const { user } = useAuth();
   const isReadOnly = user?.role === 'fdo';
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [categories, setCategories] = useState<string[]>(() => {
     const base = ['Body Contouring', 'Chemical Peel', 'Laser', 'Facials'];
     const fromServices = services.map((svc) => svc.category);
@@ -60,18 +62,7 @@ export const ServicesClinicalPage: React.FC = () => {
     setNewCategory('');
   };
 
-  const handleAddService = async () => {
-    if (isReadOnly) return;
-    if (!form.name || !form.category) return;
-    await addService({
-      category: form.category,
-      name: form.name,
-      code: form.code || undefined,
-      duration: Number(form.duration) || 0,
-      color: form.color || '#0ea5e9',
-      price: Number(form.price) || 0,
-      status: form.status,
-    });
+  const resetForm = () => {
     setForm({
       category: '',
       name: '',
@@ -81,11 +72,46 @@ export const ServicesClinicalPage: React.FC = () => {
       price: 0,
       status: 'Active',
     });
+    setEditingId(null);
+  };
+
+  const handleSaveService = async () => {
+    if (isReadOnly) return;
+    if (!form.name || !form.category) return;
+    const payload = {
+      category: form.category,
+      name: form.name,
+      code: form.code || undefined,
+      duration: Number(form.duration) || 0,
+      color: form.color || '#0ea5e9',
+      price: Number(form.price) || 0,
+      status: form.status,
+    };
+
+    const saved = editingId ? await updateService(editingId, payload) : await addService(payload);
+    if (saved) {
+      resetForm();
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (isReadOnly) return;
     await removeService(id);
+  };
+
+  const handleEdit = (service: ClinicalService) => {
+    if (isReadOnly) return;
+    setEditingId(service.id);
+    setForm({
+      category: service.category,
+      name: service.name,
+      code: service.code || '',
+      duration: service.duration,
+      color: service.color,
+      price: service.price,
+      status: service.status,
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
@@ -106,10 +132,10 @@ export const ServicesClinicalPage: React.FC = () => {
                 disabled={isReadOnly}
               />
               <button className="pill" onClick={handleAddCategory} disabled={isReadOnly}>
-                + New Category
+                <PlusIcon /> New Category
               </button>
-              <button className="pill pill--ghost" onClick={() => setSelectedCategory('All')}>
-                Refresh
+              <button className="icon-btn" onClick={() => setSelectedCategory('All')} aria-label="Refresh" title="Refresh">
+                <RefreshIcon />
               </button>
             </div>
           </div>
@@ -181,9 +207,16 @@ export const ServicesClinicalPage: React.FC = () => {
         <div className="panel section">
           <div className="section__header">
             <div>
-              <div className="section__title">New Service</div>
-              <div className="muted">Select category, set duration, price, status</div>
+              <div className="section__title">{editingId ? 'Edit Service' : 'New Service'}</div>
+              <div className="muted">
+                {editingId ? 'Update the selected clinical service and save changes' : 'Select category, set duration, price, status'}
+              </div>
             </div>
+            {editingId ? (
+              <button className="icon-btn" onClick={resetForm} disabled={isReadOnly} aria-label="Cancel edit" title="Cancel edit">
+                <XIcon />
+              </button>
+            ) : null}
           </div>
           <div className="form-grid">
             <select
@@ -249,8 +282,8 @@ export const ServicesClinicalPage: React.FC = () => {
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
             </select>
-            <button className="pill" onClick={handleAddService} disabled={isReadOnly}>
-              Save Service
+            <button className="pill" onClick={handleSaveService} disabled={isReadOnly}>
+              {editingId ? 'Update Service' : 'Save Service'}
             </button>
           </div>
         </div>
@@ -275,8 +308,8 @@ export const ServicesClinicalPage: React.FC = () => {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <button className="pill pill--ghost" onClick={() => setSearch('')}>
-              Clear Filter
+            <button className="icon-btn" onClick={() => setSearch('')} aria-label="Clear filter" title="Clear filter">
+              <FilterXIcon />
             </button>
             <select
               className="input"
@@ -332,7 +365,13 @@ export const ServicesClinicalPage: React.FC = () => {
                   </td>
                   <td className="actions-cell">
                     <div className="action-stack">
-                      <button className="icon-btn" title="Edit" aria-label="Edit service" disabled={isReadOnly}>
+                      <button
+                        className="icon-btn"
+                        title="Edit"
+                        aria-label="Edit service"
+                        onClick={() => handleEdit(svc)}
+                        disabled={isReadOnly}
+                      >
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                           <path
                             d="M3 17.25V21h3.75l11-11-3.75-3.75-11 11zm2.92 2.83H5v-.92l9.06-9.06.92.92L5.92 20.08zM20.71 7.04a1 1 0 0 0 0-1.41L18.37 3.29a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"

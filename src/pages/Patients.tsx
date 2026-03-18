@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { StatusBadge } from '../components/StatusBadge';
 import { useAuth } from '../components/AuthProvider';
 import { useAppointments, type Appointment } from '../store/useAppointments';
+import { PrintIcon, SendIcon, XIcon } from '../components/UiIcons';
 
 type PatientRow = {
   id: string;
@@ -42,12 +43,16 @@ const persistFollowUps = (rows: Record<string, string>) => {
 };
 
 export const PatientsPage: React.FC = () => {
-  const { appointments, updateStatus } = useAppointments();
+  const { appointments, hydrate, updateStatus } = useAppointments();
   const { user } = useAuth();
   const isReadOnly = user?.role === 'fdo';
   const [search, setSearch] = useState('');
   const [followUps, setFollowUps] = useState<Record<string, string>>(loadFollowUps);
   const [historyKey, setHistoryKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
 
   useEffect(() => {
     persistFollowUps(followUps);
@@ -166,19 +171,20 @@ export const PatientsPage: React.FC = () => {
                   <td className="muted small">{row.notes}</td>
                   <td className="actions-cell">
                     <div className="action-stack">
-                      <button className="pill pill--ghost" onClick={() => handlePrint(row)}>
-                        Print
+                      <button className="icon-btn" onClick={() => handlePrint(row)} aria-label="Print" title="Print">
+                        <PrintIcon />
                       </button>
-                      <button className="pill pill--ghost" onClick={() => handleMessage(row)}>
-                        Send Msg
+                      <button className="icon-btn" onClick={() => handleMessage(row)} aria-label="Send message" title="Send message">
+                        <SendIcon />
                       </button>
                       <button
-                        className="pill pill--ghost"
+                        className="icon-btn"
                         onClick={() => handleCancel(row.id)}
                         disabled={isReadOnly || row.status !== 'Pending'}
-                        title={row.status !== 'Pending' ? 'Cancel available only for Pending' : ''}
+                        aria-label="Cancel"
+                        title={row.status !== 'Pending' ? 'Cancel available only for Pending' : 'Cancel'}
                       >
-                        Cancel
+                        <XIcon />
                       </button>
                     </div>
                   </td>

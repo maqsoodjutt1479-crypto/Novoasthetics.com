@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAuth } from './AuthProvider';
 import logo from '../assets/novo-logo.svg';
+import { ChevronDownIcon, ChevronRightIcon, XIcon } from './UiIcons';
 
 type NavItem = {
   label: string;
@@ -60,7 +61,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onClose }) => {
                 aria-expanded={servicesOpen}
               >
                 <span>{item.label}</span>
-                <span aria-hidden>{servicesOpen ? 'v' : '>'}</span>
+                <span aria-hidden>{servicesOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}</span>
               </button>
               {servicesOpen && (
                 <div className="nav-children">
@@ -107,7 +108,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onClose }) => {
         </div>
         <div className="sidebar__mobile-actions">
           <button className="icon-btn" aria-label="Close navigation" onClick={onClose}>
-            X
+            <XIcon />
           </button>
         </div>
       </div>

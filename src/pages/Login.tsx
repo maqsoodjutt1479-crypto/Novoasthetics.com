@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthProvider';
 import { useStaff } from '../store/useStaff';
@@ -9,13 +9,17 @@ const ADMIN_PASS = 'admin@nova123';
 
 export const LoginPage: React.FC = () => {
   const { setRole } = useAuth();
-  const { verifyStaffCredentials } = useStaff();
+  const { hydrate, verifyStaffCredentials } = useStaff();
   const navigate = useNavigate();
   const [role, setRoleLocal] = useState<'admin' | 'doctor' | 'fdo'>('admin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(false);
   const [info, setInfo] = useState('');
+
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,7 +77,7 @@ export const LoginPage: React.FC = () => {
           </div>
         <div className="auth-heading">
           <h1>Welcome back</h1>
-          <p>Please sign in to continue to your clinic dashboard.</p>
+          <p>Please sign in to continue to your Novo Aesthetic dashboard.</p>
         </div>
         <form className="auth-form" onSubmit={handleSubmit}>
           <label className="public-field">

@@ -1,18 +1,24 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StatusBadge } from '../components/StatusBadge';
 import { packages } from '../data/packages';
 import { useAppointments } from '../store/useAppointments';
 import { usePackageAssignments } from '../store/usePackageAssignments';
 import { useAuth } from '../components/AuthProvider';
+import { PlusIcon, XIcon } from '../components/UiIcons';
 
 export const ServicesPackagesPage: React.FC = () => {
-  const { appointments } = useAppointments();
-  const { assignments, addAssignment } = usePackageAssignments();
+  const { appointments, hydrate: hydrateAppointments } = useAppointments();
+  const { assignments, hydrate: hydrateAssignments, addAssignment } = usePackageAssignments();
   const { user } = useAuth();
   const isReadOnly = user?.role === 'fdo';
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string>('');
   const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    void hydrateAppointments();
+    void hydrateAssignments();
+  }, [hydrateAppointments, hydrateAssignments]);
 
   const patientOptions = useMemo(() => {
     return appointments.map((appt) => ({
@@ -59,7 +65,7 @@ export const ServicesPackagesPage: React.FC = () => {
             <div className="muted">Bundle multiple services; choose active / inactive</div>
           </div>
           <button className="pill" disabled={isReadOnly}>
-            + New Package
+            <PlusIcon /> New Package
           </button>
         </div>
         <div className="card-grid">
@@ -112,12 +118,7 @@ export const ServicesPackagesPage: React.FC = () => {
             <div className="modal__header">
               <div className="strong">Assign Package</div>
               <button className="icon-btn" onClick={() => setSelectedPackage(null)} aria-label="Close">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    d="M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.29 19.71 2.88 18.3 9.18 12 2.88 5.71 4.29 4.3l6.3 6.3 6.29-6.3 1.42 1.41z"
-                    fill="currentColor"
-                  />
-                </svg>
+                <XIcon />
               </button>
             </div>
             <div className="stack">

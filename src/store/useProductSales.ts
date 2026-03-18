@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 
 export type ProductRow = {
   id: string;
@@ -28,7 +29,12 @@ export type Order = {
 type ProductSalesState = {
   products: ProductRow[];
   orders: Order[];
+  isLoading: boolean;
+  error: string | null;
+  hydrate: () => Promise<void>;
   addProduct: (product: Omit<ProductRow, 'id'>) => ProductRow;
+  updateProduct: (id: string, changes: Partial<Omit<ProductRow, 'id'>>) => void;
+  removeProduct: (id: string) => void;
   addOrder: (payload: {
     patient: string;
     patientId?: string;
@@ -79,9 +85,114 @@ const persistRows = <T,>(key: string, rows: T[]) => {
   }
 };
 
+type ProductRowDb = {
+  id: string;
+  name: string;
+  price: number;
+  stock: number;
+  sold: number;
+  notify: boolean;
+};
+
+type OrderRowDb = {
+  id: string;
+  patient: string;
+  patient_id: string | null;
+  products: string;
+  qty: number;
+  unit_price: number;
+  items: Array<{ name: string; qty: number; unitPrice: number }> | null;
+  location: string;
+  total: number;
+  paid: number;
+  method: 'CASH' | 'CARD' | 'BANK_TRANSFER' | 'OTHER';
+  status: 'Pending' | 'Paid' | 'Partial' | 'Cancelled';
+  created_at: string;
+};
+
+const toProductPayload = (row: ProductRow) => ({
+  id: row.id,
+  name: row.name,
+  price: row.price,
+  stock: row.stock,
+  sold: row.sold,
+  notify: row.notify,
+});
+
+const toOrderPayload = (row: Order) => ({
+  id: row.id,
+  patient: row.patient,
+  patient_id: row.patientId ?? null,
+  products: row.products,
+  qty: row.qty,
+  unit_price: row.unitPrice,
+  items: row.items ?? null,
+  location: row.location,
+  total: row.total,
+  paid: row.paid,
+  method: row.method,
+  status: row.status,
+  created_at: row.createdAt,
+});
+
+const toOrderModel = (row: OrderRowDb): Order => ({
+  id: row.id,
+  patient: row.patient,
+  patientId: row.patient_id ?? undefined,
+  products: row.products,
+  qty: row.qty,
+  unitPrice: row.unit_price,
+  items: row.items ?? undefined,
+  location: row.location,
+  total: row.total,
+  paid: row.paid,
+  method: row.method,
+  status: row.status,
+  createdAt: row.created_at,
+});
+
 export const useProductSales = create<ProductSalesState>((set) => ({
   products: loadRows(PRODUCTS_KEY, initialProducts),
   orders: loadRows(ORDERS_KEY, initialOrders),
+  isLoading: false,
+  error: null,
+  hydrate: async () => {
+    if (!isSupabaseConfigured || !supabase) {
+      set({
+        products: loadRows(PRODUCTS_KEY, initialProducts),
+        orders: loadRows(ORDERS_KEY, initialOrders),
+        isLoading: false,
+        error: null,
+      });
+      return;
+    }
+
+    set({ isLoading: true, error: null });
+    const [productsResp, ordersResp] = await Promise.all([
+      supabase.from('products').select('*').order('name', { ascending: true }),
+      supabase.from('product_orders').select('*').order('created_at', { ascending: false }),
+    ]);
+
+    const productsError = productsResp.error;
+    const ordersError = ordersResp.error;
+    if (productsError || ordersError) {
+      set({
+        products: loadRows(PRODUCTS_KEY, initialProducts),
+        orders: loadRows(ORDERS_KEY, initialOrders),
+        isLoading: false,
+        error: productsError?.message || ordersError?.message || 'Failed to load product sales data.',
+      });
+      return;
+    }
+
+    const productsData = (productsResp.data as ProductRowDb[]) ?? [];
+    const ordersData = (ordersResp.data as OrderRowDb[]) ?? [];
+    const mappedProducts = productsData;
+    const mappedOrders = ordersData.map(toOrderModel);
+    persistRows(PRODUCTS_KEY, mappedProducts);
+    persistRows(ORDERS_KEY, mappedOrders);
+    set({ products: mappedProducts, orders: mappedOrders, isLoading: false, error: null });
+  },
   addProduct: (product) => {
     let created: ProductRow | null = null;
     set((state) => {
@@ -91,10 +202,56 @@ export const useProductSales = create<ProductSalesState>((set) => ({
       };
       const next = [created, ...state.products];
       persistRows(PRODUCTS_KEY, next);
+      if (isSupabaseConfigured && supabase) {
+        void supabase.from('products').upsert(toProductPayload(created), { onConflict: 'id' }).then(({ error }) => {
+          if (error) {
+            set({ error: error.message });
+          }
+        });
+      }
       return { products: next };
     });
     return created!;
   },
+  updateProduct: (id, changes) =>
+    set((state) => {
+      const next = state.products.map((product) =>
+        product.id === id ? { ...product, ...changes } : product
+      );
+      persistRows(PRODUCTS_KEY, next);
+      if (isSupabaseConfigured && supabase) {
+        const updated = next.find((product) => product.id === id);
+        if (updated) {
+          void supabase.from('products').upsert(toProductPayload(updated), { onConflict: 'id' }).then(({ error }) => {
+            if (error) {
+              set({ error: error.message });
+            }
+          });
+        }
+      }
+      return { products: next };
+    }),
+  removeProduct: (id) =>
+    set((state) => {
+      const target = state.products.find((product) => product.id === id);
+      if (!target) return state;
+      const inUse = state.orders.some((order) =>
+        (order.items ?? []).some((item) => item.name === target.name)
+      );
+      if (inUse) {
+        return { ...state, error: 'This product exists in sales history and cannot be deleted.' };
+      }
+      const next = state.products.filter((product) => product.id !== id);
+      persistRows(PRODUCTS_KEY, next);
+      if (isSupabaseConfigured && supabase) {
+        void supabase.from('products').delete().eq('id', id).then(({ error }) => {
+          if (error) {
+            set({ error: error.message });
+          }
+        });
+      }
+      return { products: next, error: null };
+    }),
   addOrder: (payload) => {
     let created: Order | null = null;
     set((state) => {
@@ -145,6 +302,17 @@ export const useProductSales = create<ProductSalesState>((set) => ({
       const nextOrders = [created, ...state.orders];
       persistRows(PRODUCTS_KEY, nextProducts);
       persistRows(ORDERS_KEY, nextOrders);
+      if (isSupabaseConfigured && supabase) {
+        void Promise.all([
+          supabase.from('product_orders').upsert(toOrderPayload(created), { onConflict: 'id' }),
+          supabase.from('products').upsert(nextProducts.map(toProductPayload), { onConflict: 'id' }),
+        ]).then((results) => {
+          const error = results.find((r) => r.error)?.error;
+          if (error) {
+            set({ error: error.message });
+          }
+        });
+      }
       return { products: nextProducts, orders: nextOrders };
     });
     return created;
@@ -153,6 +321,19 @@ export const useProductSales = create<ProductSalesState>((set) => ({
     set((state) => {
       const next = state.orders.map((order) => (order.id === id ? { ...order, ...changes } : order));
       persistRows(ORDERS_KEY, next);
+      if (isSupabaseConfigured && supabase) {
+        const updated = next.find((order) => order.id === id);
+        if (updated) {
+          void supabase
+            .from('product_orders')
+            .upsert(toOrderPayload(updated), { onConflict: 'id' })
+            .then(({ error }) => {
+              if (error) {
+                set({ error: error.message });
+              }
+            });
+        }
+      }
       return { orders: next };
     }),
   adjustInventoryForEdit: (prev, next) =>
@@ -191,6 +372,13 @@ export const useProductSales = create<ProductSalesState>((set) => ({
         };
       }
       persistRows(PRODUCTS_KEY, nextProducts);
+      if (isSupabaseConfigured && supabase) {
+        void supabase.from('products').upsert(nextProducts.map(toProductPayload), { onConflict: 'id' }).then(({ error }) => {
+          if (error) {
+            set({ error: error.message });
+          }
+        });
+      }
       return { products: nextProducts };
     }),
 }));

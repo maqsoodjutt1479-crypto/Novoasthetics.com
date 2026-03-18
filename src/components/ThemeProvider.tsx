@@ -21,8 +21,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setThemeState(stored);
       document.documentElement.setAttribute('data-theme', stored);
     } else {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const initial = prefersDark ? 'dark' : 'light';
+      const initial = 'light';
       setThemeState(initial);
       document.documentElement.setAttribute('data-theme', initial);
     }

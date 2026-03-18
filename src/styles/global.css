@@ -103,9 +103,9 @@ main {
   align-items: center;
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(14, 165, 233, 0.1);
+  background: rgba(81, 179, 111, 0.12);
   color: var(--accent-strong);
-  border: 1px solid rgba(14, 165, 233, 0.18);
+  border: 1px solid rgba(81, 179, 111, 0.2);
   font-weight: 600;
 }
 
@@ -131,7 +131,7 @@ main {
 }
 
 .table tbody tr:hover {
-  background: rgba(14, 165, 233, 0.04);
+  background: rgba(81, 179, 111, 0.05);
 }
 
 .badge {
@@ -144,7 +144,7 @@ main {
 }
 
 [data-theme='dark'] .table tbody tr:hover {
-  background: rgba(56, 189, 248, 0.06);
+  background: rgba(111, 208, 142, 0.08);
 }
 
 [data-theme='dark'] .badge {
@@ -220,11 +220,11 @@ main {
 }
 
 .row-today {
-  background: rgba(14, 165, 233, 0.06);
+  background: rgba(81, 179, 111, 0.08);
 }
 
 [data-theme='dark'] .row-today {
-  background: rgba(56, 189, 248, 0.08);
+  background: rgba(111, 208, 142, 0.12);
 }
 
 .input {
@@ -256,7 +256,7 @@ main {
 .chip {
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(14, 165, 233, 0.12);
+  background: rgba(81, 179, 111, 0.14);
   color: var(--text);
   border: 1px solid var(--border);
   font-size: 13px;
@@ -269,12 +269,12 @@ main {
 }
 
 .badge--primary {
-  background: rgba(14, 165, 233, 0.15);
+  background: rgba(81, 179, 111, 0.15);
   color: var(--text);
 }
 
 .badge--success {
-  background: rgba(16, 185, 129, 0.18);
+  background: rgba(81, 179, 111, 0.18);
   color: var(--text);
 }
 
@@ -294,7 +294,7 @@ main {
 }
 
 .badge--info {
-  background: rgba(56, 189, 248, 0.18);
+  background: rgba(111, 208, 142, 0.18);
   color: var(--text);
 }
 
@@ -446,7 +446,7 @@ main {
   width: 100%;
   max-width: 34px;
   border-radius: 10px 10px 4px 4px;
-  background: linear-gradient(160deg, rgba(14, 165, 233, 0.8), rgba(14, 165, 233, 0.4));
+  background: linear-gradient(160deg, rgba(81, 179, 111, 0.86), rgba(81, 179, 111, 0.42));
   min-height: 10px;
 }
 
@@ -514,7 +514,7 @@ main {
 
 .icon-btn:hover {
   border-color: var(--accent);
-  background: rgba(14, 165, 233, 0.08);
+  background: rgba(81, 179, 111, 0.1);
 }
 
 .pill.badge {
@@ -537,8 +537,8 @@ main {
 
 .public-landing {
   min-height: 100vh;
-  background: radial-gradient(circle at 20% 20%, rgba(14, 165, 233, 0.12), transparent 32%),
-    radial-gradient(circle at 80% 0%, rgba(56, 189, 248, 0.16), transparent 30%),
+  background: radial-gradient(circle at 20% 20%, rgba(81, 179, 111, 0.14), transparent 32%),
+    radial-gradient(circle at 80% 0%, rgba(111, 208, 142, 0.18), transparent 30%),
     var(--bg);
   color: var(--text);
   padding: 32px 20px 40px;
@@ -582,7 +582,7 @@ main {
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(14, 165, 233, 0.06);
+  background: rgba(81, 179, 111, 0.08);
 }
 
 .status-row {
@@ -639,7 +639,7 @@ main {
   display: grid;
   place-items: center;
   font-weight: 700;
-  background: rgba(14, 165, 233, 0.12);
+  background: rgba(81, 179, 111, 0.14);
 }
 
 .success-text {
@@ -709,13 +709,13 @@ main {
 }
 
 .chat-msg--bot {
-  background: rgba(14, 165, 233, 0.12);
+  background: rgba(81, 179, 111, 0.14);
   border: 1px solid var(--border);
   align-self: flex-start;
 }
 
 .chat-msg--user {
-  background: rgba(16, 185, 129, 0.14);
+  background: rgba(81, 179, 111, 0.16);
   border: 1px solid var(--border);
   align-self: flex-end;
 }
@@ -731,16 +731,16 @@ main {
   place-items: center;
   position: relative;
   overflow: hidden;
-  background: radial-gradient(circle at 20% 30%, rgba(99, 102, 241, 0.25), transparent 30%),
-    radial-gradient(circle at 80% 20%, rgba(168, 85, 247, 0.18), transparent 32%),
-    radial-gradient(circle at 50% 90%, rgba(14, 165, 233, 0.18), transparent 30%),
+  background: radial-gradient(circle at 20% 30%, rgba(81, 179, 111, 0.22), transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(154, 229, 175, 0.16), transparent 32%),
+    radial-gradient(circle at 50% 90%, rgba(111, 208, 142, 0.18), transparent 30%),
     var(--bg);
 }
 
 .auth-overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.4), rgba(14, 165, 233, 0.3));
+  background: linear-gradient(135deg, rgba(81, 179, 111, 0.34), rgba(111, 208, 142, 0.26));
   opacity: 0.45;
   filter: blur(80px);
   z-index: 1;
@@ -1048,7 +1048,7 @@ main {
   background: linear-gradient(120deg, var(--accent), var(--accent-strong));
   color: #f8fafc;
   font-weight: 800;
-  box-shadow: 0 12px 28px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 12px 28px rgba(47, 138, 75, 0.28);
 }
 
 .auth-footer {
@@ -1063,7 +1063,7 @@ main {
   border: none;
   border-radius: 999px;
   padding: 12px 16px;
-  background: linear-gradient(120deg, rgba(14, 165, 233, 0.9), rgba(14, 165, 233, 0.7));
+  background: linear-gradient(120deg, rgba(81, 179, 111, 0.92), rgba(47, 138, 75, 0.82));
   color: #0b1220;
   font-weight: 800;
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);

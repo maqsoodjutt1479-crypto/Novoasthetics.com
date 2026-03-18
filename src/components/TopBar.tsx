@@ -3,6 +3,7 @@ import { useTheme } from './ThemeProvider';
 import { useAuth } from './AuthProvider';
 import { useNavigate } from 'react-router-dom';
 import { useNotifications, type Notification } from '../store/useNotifications';
+import { BellIcon, CheckIcon, MenuIcon, MoonIcon, PowerIcon, SendIcon, SunIcon, XIcon } from './UiIcons';
 
 type TopBarProps = {
   title?: string;
@@ -35,7 +36,7 @@ export const TopBar: React.FC<TopBarProps> = ({ title, onToggleSidebar }) => {
             aria-label="Toggle navigation"
             onClick={onToggleSidebar}
           >
-            Menu
+            <MenuIcon />
           </button>
         )}
         <div className="topbar__title">{title || 'Overview'}</div>
@@ -43,15 +44,16 @@ export const TopBar: React.FC<TopBarProps> = ({ title, onToggleSidebar }) => {
       
       <div className="topbar__actions">
         <div className="notification-wrapper">
-          <button className="pill pill--ghost" onClick={() => setOpen((v) => !v)}>
-            Notifications {notifications.length > 0 ? `(${notifications.length})` : ''}
+          <button className="icon-btn" onClick={() => setOpen((v) => !v)} aria-label="Notifications" title="Notifications">
+            <BellIcon />
+            {notifications.length > 0 ? <span className="topbar__count">{notifications.length}</span> : null}
           </button>
           {open && (
             <div className="notif-popover panel">
               <div className="section__header">
                 <div className="section__title">Notifications</div>
-                <button className="pill pill--ghost" onClick={() => setOpen(false)}>
-                  Close
+                <button className="icon-btn" onClick={() => setOpen(false)} aria-label="Close notifications" title="Close notifications">
+                  <XIcon />
                 </button>
               </div>
               <div className="stack">
@@ -66,12 +68,12 @@ export const TopBar: React.FC<TopBarProps> = ({ title, onToggleSidebar }) => {
                     </div>
                     <div className="action-stack" style={{ alignItems: 'flex-end' }}>
                       {n.kind === 'reminder' && (
-                        <button className="pill pill--ghost" onClick={() => handleSendMessage(n)}>
-                          Send Msg
+                        <button className="icon-btn" onClick={() => handleSendMessage(n)} aria-label="Send message" title="Send message">
+                          <SendIcon />
                         </button>
                       )}
-                      <button className="pill pill--ghost" onClick={() => markRead(n.id)}>
-                        Mark read
+                      <button className="icon-btn" onClick={() => markRead(n.id)} aria-label="Mark read" title="Mark read">
+                        <CheckIcon />
                       </button>
                     </div>
                   </div>
@@ -114,16 +116,18 @@ export const TopBar: React.FC<TopBarProps> = ({ title, onToggleSidebar }) => {
           </select>
         )}
         <button
-          className="pill pill--ghost"
+          className="icon-btn"
           onClick={() => {
             logout();
             navigate('/login');
           }}
+          aria-label="Logout"
+          title="Logout"
         >
-          Logout
+          <PowerIcon />
         </button>
-        <button className="pill" onClick={toggleTheme} aria-label="Toggle theme">
-          {theme === 'light' ? 'Switch to Dark' : 'Switch to Light'}
+        <button className="icon-btn" onClick={toggleTheme} aria-label="Toggle theme" title={theme === 'light' ? 'Dark mode' : 'Light mode'}>
+          {theme === 'light' ? <MoonIcon /> : <SunIcon />}
         </button>
       </div>
     </header>
@@ -169,7 +173,7 @@ const styles = `
   padding: 8px 10px;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: rgba(148, 163, 184, 0.14);
+  background: rgba(81, 179, 111, 0.12);
   font-size: 13px;
 }
 
@@ -182,11 +186,28 @@ const styles = `
 }
 
 .pill {
-  background: linear-gradient(120deg, rgba(14, 165, 233, 0.14), rgba(14, 165, 233, 0.08));
+  background: linear-gradient(120deg, rgba(81, 179, 111, 0.18), rgba(81, 179, 111, 0.08));
 }
 
 .notification-wrapper {
   position: relative;
+}
+
+.topbar__count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger, #dc2626);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .notif-popover {

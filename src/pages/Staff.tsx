@@ -1,11 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StatusBadge } from '../components/StatusBadge';
 import { useStaff, type StaffRole, type StaffMember } from '../store/useStaff';
 import { hashPassword } from '../utils/password';
 import { useAuth } from '../components/AuthProvider';
+import { FilterXIcon, PowerIcon, TrashIcon } from '../components/UiIcons';
 
 export const StaffPage: React.FC = () => {
-  const { staff, addStaff, updateStatus, removeStaff } = useStaff();
+  const { staff, hydrate, addStaff, updateStatus, removeStaff } = useStaff();
   const { user } = useAuth();
   const isReadOnly = user?.role === 'fdo';
   const [search, setSearch] = useState('');
@@ -22,6 +23,10 @@ export const StaffPage: React.FC = () => {
     status: 'Active' as StaffMember['status'],
   });
   const [formError, setFormError] = useState('');
+
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
 
   const filtered = useMemo(
     () =>
@@ -198,8 +203,8 @@ export const StaffPage: React.FC = () => {
               <option value="Technician">Technician</option>
               <option value="FDO">FDO</option>
             </select>
-            <button className="pill pill--ghost" onClick={() => { setSearch(''); setFilterRole('All'); }}>
-              Clear
+            <button className="icon-btn" onClick={() => { setSearch(''); setFilterRole('All'); }} aria-label="Clear filters" title="Clear filters">
+              <FilterXIcon />
             </button>
           </div>
         </div>
@@ -245,11 +250,17 @@ export const StaffPage: React.FC = () => {
                   </td>
                   <td className="actions-cell">
                     <div className="action-stack">
-                      <button className="pill pill--ghost" onClick={() => toggleStatus(member.id)} disabled={isReadOnly}>
-                        {member.status === 'Active' ? 'Deactivate' : 'Activate'}
+                      <button
+                        className="icon-btn"
+                        onClick={() => toggleStatus(member.id)}
+                        disabled={isReadOnly}
+                        aria-label={member.status === 'Active' ? 'Deactivate' : 'Activate'}
+                        title={member.status === 'Active' ? 'Deactivate' : 'Activate'}
+                      >
+                        <PowerIcon />
                       </button>
-                      <button className="pill pill--ghost" onClick={() => handleDelete(member.id)} disabled={isReadOnly}>
-                        Delete
+                      <button className="icon-btn" onClick={() => handleDelete(member.id)} disabled={isReadOnly} aria-label="Delete" title="Delete">
+                        <TrashIcon />
                       </button>
                     </div>
                   </td>

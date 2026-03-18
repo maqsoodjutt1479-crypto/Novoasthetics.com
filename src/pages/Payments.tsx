@@ -3,14 +3,54 @@ import { StatusBadge } from '../components/StatusBadge';
 import { usePayments, type Payment, type PaymentMethod } from '../store/usePayments';
 import logo from '../assets/novo-logo.svg';
 import { useAuth } from '../components/AuthProvider';
+import { DownloadIcon, FilterXIcon, PlusIcon } from '../components/UiIcons';
+
+type RangeFilter = 'all' | 'today' | 'week' | 'month';
+type HistoryView = 'day' | 'week' | 'month';
+
+const getReceivedAmount = (payment: Payment) =>
+  (payment.cash || 0) + (payment.card || 0) + (payment.bank || 0) + (payment.other || 0);
+
+const normalizeDate = (raw: string) => raw.replace('T', ' ');
+const parseDate = (raw: string) => new Date(normalizeDate(raw));
+const formatMoney = (value?: number) => `PKR ${Math.round(value ?? 0).toLocaleString()}`;
+
+const getDiscountValue = (discount: string | undefined, amount: number) => {
+  const raw = (discount || '').trim();
+  if (!raw) return 0;
+  const numeric = Number(raw.replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(numeric)) return 0;
+  if (/%\s*$/.test(raw)) {
+    return Math.round((amount * numeric) / 100);
+  }
+  return Math.round(numeric);
+};
+
+const paymentStatus = (payment: Payment): 'Paid' | 'Partial' | 'Unpaid' => {
+  const settled = getReceivedAmount(payment);
+  if (settled >= payment.amount) return 'Paid';
+  if (settled > 0) return 'Partial';
+  return 'Unpaid';
+};
+
+const getWeekKey = (date: Date) => {
+  const ref = new Date(date);
+  const diffToMonday = (ref.getDay() + 6) % 7;
+  ref.setDate(ref.getDate() - diffToMonday);
+  return ref.toISOString().slice(0, 10);
+};
 
 export const PaymentsPage: React.FC = () => {
-  const { payments, addPayment } = usePayments();
+  const { payments, hydrate, addPayment } = usePayments();
   const { user } = useAuth();
   const isReadOnly = user?.role === 'fdo';
+  const [range, setRange] = useState<RangeFilter>('all');
+  const [historyView, setHistoryView] = useState<HistoryView>('day');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [patientId, setPatientId] = useState('');
+  const [patientQuery, setPatientQuery] = useState('');
+  const [sourceQuery, setSourceQuery] = useState('');
+  const [methodFilter, setMethodFilter] = useState<'All' | PaymentMethod>('All');
   const [printingPayment, setPrintingPayment] = useState<Payment | null>(null);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 16),
@@ -22,79 +62,134 @@ export const PaymentsPage: React.FC = () => {
     card: '',
     bank: '',
     other: '',
-    source: 'appointment',
+    source: '',
+    notes: '',
   });
-  const normalizeDate = (raw: string) => raw.replace('T', ' ');
-  const parseDate = (raw: string) => new Date(normalizeDate(raw));
-  const formatMoney = (value?: number) => `PKR ${Math.round(value ?? 0).toLocaleString()}`;
-  const getDiscountValue = (discount: string | undefined, amount: number) => {
-    const raw = (discount || '').trim();
-    if (!raw) return 0;
-    const numeric = Number(raw.replace(/[^0-9.]/g, ''));
-    if (!Number.isFinite(numeric)) return 0;
-    if (/%\s*$/.test(raw)) {
-      return Math.round((amount * numeric) / 100);
-    }
-    return Math.round(numeric);
-  };
 
-  const paymentStatus = (p: Payment): 'Paid' | 'Partial' | 'Unpaid' => {
-    const settled = (p.cash || 0) + (p.card || 0) + (p.bank || 0) + (p.other || 0);
-    if (settled >= p.amount) return 'Paid';
-    if (settled > 0) return 'Partial';
-    return 'Unpaid';
-  };
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
 
-  const filtered = useMemo(
-    () =>
-      payments.filter((p) => {
-        const payDate = parseDate(p.date);
-        const fromDate = from ? parseDate(`${from} 00:00:00`) : null;
-        const toDate = to ? parseDate(`${to} 23:59:59`) : null;
-        const inRange =
-          (!fromDate || payDate >= fromDate) &&
-          (!toDate || payDate <= toDate);
-        const matchesPatient = !patientId || p.patientId.includes(patientId);
-        return inRange && matchesPatient;
-      }),
-    [from, to, patientId, payments]
-  );
+  useEffect(() => {
+    if (!printingPayment) return;
+    const handleAfterPrint = () => setPrintingPayment(null);
+    window.addEventListener('afterprint', handleAfterPrint);
+    window.print();
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, [printingPayment]);
+
+  const filtered = useMemo(() => {
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const weekKey = getWeekKey(now);
+    const monthKey = now.toISOString().slice(0, 7);
+
+    return payments.filter((payment) => {
+      const payDate = parseDate(payment.date);
+      const dateKey = payDate.toISOString().slice(0, 10);
+      const inQuickRange =
+        range === 'all'
+          ? true
+          : range === 'today'
+          ? dateKey === today
+          : range === 'week'
+          ? getWeekKey(payDate) === weekKey
+          : payDate.toISOString().slice(0, 7) === monthKey;
+      const fromDate = from ? parseDate(`${from} 00:00:00`) : null;
+      const toDate = to ? parseDate(`${to} 23:59:59`) : null;
+      const inManualRange = (!fromDate || payDate >= fromDate) && (!toDate || payDate <= toDate);
+      const query = patientQuery.trim().toLowerCase();
+      const matchesPatient =
+        !query ||
+        payment.patientId.toLowerCase().includes(query) ||
+        payment.patientName.toLowerCase().includes(query);
+      const sourceText = `${payment.source} ${payment.notes || ''}`.toLowerCase();
+      const matchesSource = !sourceQuery.trim() || sourceText.includes(sourceQuery.trim().toLowerCase());
+      const matchesMethod = methodFilter === 'All' || payment.method === methodFilter;
+      return inQuickRange && inManualRange && matchesPatient && matchesSource && matchesMethod;
+    });
+  }, [payments, range, from, to, patientQuery, sourceQuery, methodFilter]);
 
   const totals = useMemo(() => {
-    const t = filtered.reduce(
-      (acc, p) => {
-        acc.amount += p.amount;
-        acc.cash += p.cash;
-        acc.card += p.card;
-        acc.bank += p.bank;
-        acc.other += p.other;
+    return filtered.reduce(
+      (acc, payment) => {
+        const received = getReceivedAmount(payment);
+        acc.amount += payment.amount;
+        acc.received += received;
+        acc.cash += payment.cash;
+        acc.card += payment.card;
+        acc.bank += payment.bank;
+        acc.other += payment.other;
+        acc.balance += Math.max(0, payment.amount - received);
         return acc;
       },
-      { amount: 0, cash: 0, card: 0, bank: 0, other: 0 }
+      { amount: 0, received: 0, cash: 0, card: 0, bank: 0, other: 0, balance: 0 }
     );
-    return t;
   }, [filtered]);
+
+  const historyRows = useMemo(() => {
+    const grouped = new Map<
+      string,
+      {
+        label: string;
+        count: number;
+        amount: number;
+        received: number;
+        balance: number;
+      }
+    >();
+
+    filtered.forEach((payment) => {
+      const date = parseDate(payment.date);
+      const key =
+        historyView === 'day'
+          ? date.toISOString().slice(0, 10)
+          : historyView === 'week'
+          ? getWeekKey(date)
+          : date.toISOString().slice(0, 7);
+      const label =
+        historyView === 'day'
+          ? key
+          : historyView === 'week'
+          ? `Week of ${key}`
+          : new Date(`${key}-01T00:00:00`).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      const received = getReceivedAmount(payment);
+      const existing = grouped.get(key) ?? { label, count: 0, amount: 0, received: 0, balance: 0 };
+      existing.count += 1;
+      existing.amount += payment.amount;
+      existing.received += received;
+      existing.balance += Math.max(0, payment.amount - received);
+      grouped.set(key, existing);
+    });
+
+    return Array.from(grouped.entries())
+      .sort((a, b) => (a[0] > b[0] ? -1 : 1))
+      .map(([, value]) => value);
+  }, [filtered, historyView]);
 
   const handleAdd = () => {
     if (isReadOnly) return;
     if (!form.patientName.trim()) return;
     const amount = Number(form.amount) || 0;
-    const cash = form.cash ? Number(form.cash) : amount;
+    const cash = Number(form.cash) || 0;
     const card = Number(form.card) || 0;
     const bank = Number(form.bank) || 0;
     const other = Number(form.other) || 0;
     addPayment({
       date: normalizeDate(form.date || new Date().toISOString().slice(0, 16)),
-      patientId: form.patientId || 'N/A',
+      patientId: form.patientId.trim() || 'N/A',
       patientName: form.patientName.trim(),
       method: form.method,
       amount,
       discount: '0%',
+      notes: form.notes.trim() || undefined,
       cash,
       card,
       bank,
       other,
-      source: form.source || 'appointment',
+      source: form.source.trim() || 'Manual Entry',
     });
     setForm({
       date: new Date().toISOString().slice(0, 16),
@@ -106,31 +201,64 @@ export const PaymentsPage: React.FC = () => {
       card: '',
       bank: '',
       other: '',
-      source: 'appointment',
+      source: '',
+      notes: '',
     });
   };
 
   const handleExport = () => {
-    const headers = ['Date', 'Patient ID', 'Patient Name', 'Method', 'Status', 'Amount', 'Cash', 'Card', 'Bank', 'Other', 'Source', 'Ref ID'];
+    const headers = [
+      'Date',
+      'Patient ID',
+      'Patient Name',
+      'Method',
+      'Status',
+      'Amount',
+      'Received',
+      'Cash',
+      'Card',
+      'Bank',
+      'Other',
+      'Source',
+      'Notes',
+      'Ref ID',
+    ];
     const csv = [
       headers.join(','),
-      ...filtered.map((p) =>
+      ...filtered.map((payment) =>
         [
-          p.date,
-          p.patientId,
-          p.patientName,
-          p.method,
-          paymentStatus(p),
-          p.amount,
-          p.cash,
-          p.card,
-          p.bank,
-          p.other,
-          p.source,
-          p.id,
+          payment.date,
+          payment.patientId,
+          payment.patientName,
+          payment.method,
+          paymentStatus(payment),
+          payment.amount,
+          getReceivedAmount(payment),
+          payment.cash,
+          payment.card,
+          payment.bank,
+          payment.other,
+          (payment.source || '').replace(/,/g, ';'),
+          (payment.notes || '').replace(/,/g, ';'),
+          payment.id,
         ].join(',')
       ),
-      ['TOTALS', '', '', '', '', totals.amount, totals.cash, totals.card, totals.bank, totals.other, '', ''].join(','),
+      [
+        'TOTALS',
+        '',
+        '',
+        '',
+        '',
+        totals.amount,
+        totals.received,
+        totals.cash,
+        totals.card,
+        totals.bank,
+        totals.other,
+        '',
+        '',
+        '',
+      ].join(','),
     ].join('\n');
 
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -141,20 +269,6 @@ export const PaymentsPage: React.FC = () => {
     a.click();
     URL.revokeObjectURL(url);
   };
-
-  const handlePrint = (payment: Payment) => {
-    setPrintingPayment(payment);
-  };
-
-  useEffect(() => {
-    if (!printingPayment) return;
-    const handleAfterPrint = () => setPrintingPayment(null);
-    window.addEventListener('afterprint', handleAfterPrint);
-    window.print();
-    return () => {
-      window.removeEventListener('afterprint', handleAfterPrint);
-    };
-  }, [printingPayment]);
 
   const now = new Date();
   const todayLabel = now.toLocaleDateString('en-US', {
@@ -171,25 +285,102 @@ export const PaymentsPage: React.FC = () => {
           <div>
             <div className="section__title">Payments Statement</div>
             <div className="muted">
-              Period: {from || 'All'} to {to || 'All'} | Cash: {totals.cash.toLocaleString()} | Card: {totals.card.toLocaleString()} | Bank: {totals.bank.toLocaleString()} | Other: {totals.other.toLocaleString()} | Grand: {totals.amount.toLocaleString()}
+              Revenue filtered by range, patient, method, service/product source, and notes.
             </div>
           </div>
-          <div className="pill pill--ghost">All Branches</div>
+          <div className="filter-bar">
+            {(['all', 'today', 'week', 'month'] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`pill ${range === value ? '' : 'pill--ghost'}`}
+                onClick={() => setRange(value)}
+              >
+                {value === 'all' ? 'All Time' : value === 'today' ? 'Today' : value === 'week' ? 'This Week' : 'This Month'}
+              </button>
+            ))}
+          </div>
         </div>
+
+        <div className="card-grid" style={{ marginBottom: 14 }}>
+          <div className="stat-card panel">
+            <div className="stat-card__label">Billed Revenue</div>
+            <div className="stat-card__value">{formatMoney(totals.amount)}</div>
+            <div className="stat-card__trend">Invoices in current filter</div>
+          </div>
+          <div className="stat-card panel">
+            <div className="stat-card__label">Received</div>
+            <div className="stat-card__value">{formatMoney(totals.received)}</div>
+            <div className="stat-card__trend success">Cash, card, bank, and other combined</div>
+          </div>
+          <div className="stat-card panel">
+            <div className="stat-card__label">Outstanding</div>
+            <div className="stat-card__value">{formatMoney(totals.balance)}</div>
+            <div className="stat-card__trend warning">Remaining to collect</div>
+          </div>
+          <div className="stat-card panel">
+            <div className="stat-card__label">Entries</div>
+            <div className="stat-card__value">{filtered.length}</div>
+            <div className="stat-card__trend">Visible payment records</div>
+          </div>
+        </div>
+
         <div className="filter-bar">
           <input type="date" className="input" value={from} onChange={(e) => setFrom(e.target.value)} />
           <input type="date" className="input" value={to} onChange={(e) => setTo(e.target.value)} />
           <input
             className="input"
-            placeholder="Patient ID (optional)"
-            value={patientId}
-            onChange={(e) => setPatientId(e.target.value)}
+            placeholder="Patient ID or name"
+            value={patientQuery}
+            onChange={(e) => setPatientQuery(e.target.value)}
           />
-          <button className="pill" onClick={handleAdd} disabled={isReadOnly}>
-            + Add Payment
+          <input
+            className="input"
+            placeholder="Source / treatment / product / notes"
+            value={sourceQuery}
+            onChange={(e) => setSourceQuery(e.target.value)}
+          />
+          <select
+            className="input"
+            value={methodFilter}
+            onChange={(e) => setMethodFilter(e.target.value as 'All' | PaymentMethod)}
+          >
+            <option value="All">All Methods</option>
+            <option value="CASH">Cash</option>
+            <option value="CARD">Card</option>
+            <option value="BANK_TRANSFER">Bank Transfer</option>
+            <option value="OTHER">Other</option>
+          </select>
+          <button className="icon-btn" type="button" onClick={handleExport} aria-label="Export CSV" title="Export CSV">
+            <DownloadIcon />
           </button>
-          <button className="pill pill--ghost" onClick={handleExport}>
-            Export CSV
+          <button
+            className="icon-btn"
+            type="button"
+            onClick={() => {
+              setRange('all');
+              setFrom('');
+              setTo('');
+              setPatientQuery('');
+              setSourceQuery('');
+              setMethodFilter('All');
+            }}
+            aria-label="Clear filters"
+            title="Clear filters"
+          >
+            <FilterXIcon />
+          </button>
+        </div>
+      </div>
+
+      <div className="panel section">
+        <div className="section__header">
+          <div>
+            <div className="section__title">Add Payment</div>
+            <div className="muted">Source should clearly mention the service, treatment, or product sold.</div>
+          </div>
+          <button className="pill" onClick={handleAdd} disabled={isReadOnly}>
+            <PlusIcon /> Add Payment
           </button>
         </div>
         <div className="form-grid">
@@ -197,29 +388,27 @@ export const PaymentsPage: React.FC = () => {
             type="datetime-local"
             className="input"
             value={form.date}
-            onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
-            title="Payment date/time"
+            onChange={(e) => setForm((current) => ({ ...current, date: e.target.value }))}
             disabled={isReadOnly}
           />
           <input
             className="input"
             placeholder="Patient ID"
             value={form.patientId}
-            onChange={(e) => setForm((f) => ({ ...f, patientId: e.target.value }))}
+            onChange={(e) => setForm((current) => ({ ...current, patientId: e.target.value }))}
             disabled={isReadOnly}
           />
           <input
             className="input"
             placeholder="Patient Name"
             value={form.patientName}
-            onChange={(e) => setForm((f) => ({ ...f, patientName: e.target.value }))}
-            required
+            onChange={(e) => setForm((current) => ({ ...current, patientName: e.target.value }))}
             disabled={isReadOnly}
           />
           <select
             className="input"
             value={form.method}
-            onChange={(e) => setForm((f) => ({ ...f, method: e.target.value as PaymentMethod }))}
+            onChange={(e) => setForm((current) => ({ ...current, method: e.target.value as PaymentMethod }))}
             disabled={isReadOnly}
           >
             <option value="CASH">Cash</option>
@@ -231,55 +420,113 @@ export const PaymentsPage: React.FC = () => {
             className="input"
             type="number"
             min="0"
-            placeholder="Amount"
+            placeholder="Bill Amount"
             value={form.amount}
-            onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+            onChange={(e) => setForm((current) => ({ ...current, amount: e.target.value }))}
             disabled={isReadOnly}
           />
           <input
             className="input"
             type="number"
             min="0"
-            placeholder="Cash"
+            placeholder="Cash Received"
             value={form.cash}
-            onChange={(e) => setForm((f) => ({ ...f, cash: e.target.value }))}
-            title="Cash received (defaults to amount if left empty)"
+            onChange={(e) => setForm((current) => ({ ...current, cash: e.target.value }))}
             disabled={isReadOnly}
           />
           <input
             className="input"
             type="number"
             min="0"
-            placeholder="Card"
+            placeholder="Card Received"
             value={form.card}
-            onChange={(e) => setForm((f) => ({ ...f, card: e.target.value }))}
+            onChange={(e) => setForm((current) => ({ ...current, card: e.target.value }))}
             disabled={isReadOnly}
           />
           <input
             className="input"
             type="number"
             min="0"
-            placeholder="Bank"
+            placeholder="Bank Received"
             value={form.bank}
-            onChange={(e) => setForm((f) => ({ ...f, bank: e.target.value }))}
+            onChange={(e) => setForm((current) => ({ ...current, bank: e.target.value }))}
             disabled={isReadOnly}
           />
           <input
             className="input"
             type="number"
             min="0"
-            placeholder="Other"
+            placeholder="Other Received"
             value={form.other}
-            onChange={(e) => setForm((f) => ({ ...f, other: e.target.value }))}
+            onChange={(e) => setForm((current) => ({ ...current, other: e.target.value }))}
             disabled={isReadOnly}
           />
           <input
             className="input"
-            placeholder="Source (e.g., appointment, retail)"
+            placeholder="Source / Treatment / Product"
             value={form.source}
-            onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
+            onChange={(e) => setForm((current) => ({ ...current, source: e.target.value }))}
             disabled={isReadOnly}
           />
+          <input
+            className="input"
+            placeholder="Notes"
+            value={form.notes}
+            onChange={(e) => setForm((current) => ({ ...current, notes: e.target.value }))}
+            disabled={isReadOnly}
+          />
+        </div>
+      </div>
+
+      <div className="panel section">
+        <div className="section__header">
+          <div>
+            <div className="section__title">Sales / Revenue History</div>
+            <div className="muted">Grouped revenue trends for the current filter.</div>
+          </div>
+          <div className="filter-bar">
+            {(['day', 'week', 'month'] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`pill ${historyView === value ? '' : 'pill--ghost'}`}
+                onClick={() => setHistoryView(value)}
+              >
+                {value === 'day' ? 'Daily' : value === 'week' ? 'Weekly' : 'Monthly'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="table-wrapper">
+          <table className="table table--compact">
+            <thead>
+              <tr>
+                <th>Period</th>
+                <th>Entries</th>
+                <th>Billed</th>
+                <th>Received</th>
+                <th>Outstanding</th>
+              </tr>
+            </thead>
+            <tbody>
+              {historyRows.map((row) => (
+                <tr key={row.label}>
+                  <td>{row.label}</td>
+                  <td>{row.count}</td>
+                  <td>{formatMoney(row.amount)}</td>
+                  <td>{formatMoney(row.received)}</td>
+                  <td>{formatMoney(row.balance)}</td>
+                </tr>
+              ))}
+              {historyRows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="muted small" style={{ textAlign: 'center' }}>
+                    No revenue history for the current filter.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -289,61 +536,61 @@ export const PaymentsPage: React.FC = () => {
             <thead>
               <tr>
                 <th>Date/Time</th>
-                <th>Patient ID</th>
-                <th>Patient Name</th>
+                <th>Patient</th>
                 <th>Method</th>
                 <th>Status</th>
-                <th>Amount</th>
-                <th>Cash</th>
-                <th>Card</th>
-                <th>Bank</th>
-                <th>Other</th>
+                <th>Billed</th>
+                <th>Received</th>
+                <th>Balance</th>
                 <th>Source</th>
+                <th>Notes</th>
                 <th>Ref ID</th>
                 <th>Slip</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.date}</td>
-                  <td className="muted small">{p.patientId}</td>
-                  <td>{p.patientName}</td>
-                  <td>{p.method}</td>
-                  <td>
-                    <StatusBadge status={paymentStatus(p)} />
-                  </td>
-                  <td>PKR {p.amount.toLocaleString()}</td>
-                  <td>PKR {p.cash.toLocaleString()}</td>
-                  <td>PKR {p.card.toLocaleString()}</td>
-                  <td>PKR {p.bank.toLocaleString()}</td>
-                  <td>PKR {p.other.toLocaleString()}</td>
-                  <td className="muted small">{p.source}</td>
-                  <td className="muted small">{p.id}</td>
-                  <td>
-                    <button className="icon-btn" title="Print slip" aria-label="Print slip" onClick={() => handlePrint(p)}>
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path
-                          d="M7 7V3h10v4H7zm10 2h1a3 3 0 0 1 3 3v5h-4v4H7v-4H3v-5a3 3 0 0 1 3-3h11zm-2 10v-4H9v4h6zm4-2h2v-5a1 1 0 0 0-1-1H6a1 1 0 0 0-1 1v5h2v-4h8v4h4z"
-                          fill="currentColor"
-                        />
-                      </svg>
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((payment) => {
+                const received = getReceivedAmount(payment);
+                return (
+                  <tr key={payment.id}>
+                    <td>{payment.date}</td>
+                    <td>
+                      <div>{payment.patientName}</div>
+                      <div className="muted small">{payment.patientId}</div>
+                    </td>
+                    <td>{payment.method}</td>
+                    <td>
+                      <StatusBadge status={paymentStatus(payment)} />
+                    </td>
+                    <td>{formatMoney(payment.amount)}</td>
+                    <td>{formatMoney(received)}</td>
+                    <td>{formatMoney(Math.max(0, payment.amount - received))}</td>
+                    <td className="muted small">{payment.source}</td>
+                    <td className="muted small">{payment.notes || '-'}</td>
+                    <td className="muted small">{payment.id}</td>
+                    <td>
+                      <button className="icon-btn" title="Print slip" aria-label="Print slip" onClick={() => setPrintingPayment(payment)}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path
+                            d="M7 7V3h10v4H7zm10 2h1a3 3 0 0 1 3 3v5h-4v4H7v-4H3v-5a3 3 0 0 1 3-3h11zm-2 10v-4H9v4h6zm4-2h2v-5a1 1 0 0 0-1-1H6a1 1 0 0 0-1 1v5h2v-4h8v4h4z"
+                            fill="currentColor"
+                          />
+                        </svg>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {filtered.length > 0 && (
                 <tr>
                   <td className="strong">Totals</td>
                   <td />
                   <td />
                   <td />
+                  <td>{formatMoney(totals.amount)}</td>
+                  <td>{formatMoney(totals.received)}</td>
+                  <td>{formatMoney(totals.balance)}</td>
                   <td />
-                  <td>PKR {totals.amount.toLocaleString()}</td>
-                  <td>PKR {totals.cash.toLocaleString()}</td>
-                  <td>PKR {totals.card.toLocaleString()}</td>
-                  <td>PKR {totals.bank.toLocaleString()}</td>
-                  <td>PKR {totals.other.toLocaleString()}</td>
                   <td />
                   <td />
                   <td />
@@ -353,6 +600,7 @@ export const PaymentsPage: React.FC = () => {
           </table>
         </div>
       </div>
+
       {printingPayment && (
         <section className="consultation-print">
           <div className="consultation-watermark" aria-hidden="true">
@@ -404,13 +652,17 @@ export const PaymentsPage: React.FC = () => {
               <span>Method</span>
               <div>{printingPayment.method}</div>
             </div>
-            <div className="consultation-field">
+            <div className="consultation-field consultation-field--wide">
               <span>Source</span>
               <div>{printingPayment.source}</div>
             </div>
             <div className="consultation-field">
               <span>Reference</span>
               <div>{printingPayment.id}</div>
+            </div>
+            <div className="consultation-field consultation-field--wide">
+              <span>Notes</span>
+              <div>{printingPayment.notes || '-'}</div>
             </div>
           </section>
 
@@ -440,7 +692,7 @@ export const PaymentsPage: React.FC = () => {
                         <td>{formatMoney(baseAmount)}</td>
                         <td>{`${discountLabel} (${formatMoney(discountValue)})`}</td>
                         <td>{formatMoney(payableAmount)}</td>
-                        <td>{formatMoney(payableAmount)}</td>
+                        <td>{formatMoney(printingPayment.cash)}</td>
                       </>
                     );
                   })()}

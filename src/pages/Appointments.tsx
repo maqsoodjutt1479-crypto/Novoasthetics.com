@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBadge } from '../components/StatusBadge';
 import { useAppointments, type Appointment, type AppointmentStatus } from '../store/useAppointments';
 import { useAuth } from '../components/AuthProvider';
@@ -9,6 +9,7 @@ import logo from '../assets/novo-logo.svg';
 import { useClinicalServices } from '../store/useClinicalServices';
 import { useStaff } from '../store/useStaff';
 import { usePayments } from '../store/usePayments';
+import { DownloadIcon, FilterXIcon, PlusIcon } from '../components/UiIcons';
 
 const statusOptions: AppointmentStatus[] = [
   'Pending',
@@ -24,12 +25,12 @@ const fallbackDoctors = ['Dr. Khan', 'Dr. Fatima', 'Dr. Ali'];
 const workingSlots = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'];
 
 export const AppointmentsPage: React.FC = () => {
-  const { appointments, addAppointment, updateStatus, updateAppointment } = useAppointments();
+  const { appointments, hydrate: hydrateAppointments, addAppointment, updateStatus, updateAppointment } = useAppointments();
   const { upsertPayment } = usePayments();
   const { addFromAppointment, markByAppointment } = useNotifications();
   const { addAssignment } = usePackageAssignments();
-  const { services } = useClinicalServices();
-  const { staff } = useStaff();
+  const { services, hydrate: hydrateServices } = useClinicalServices();
+  const { staff, hydrate: hydrateStaff } = useStaff();
   const {
     user,
   } = useAuth();
@@ -47,10 +48,13 @@ export const AppointmentsPage: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [assigning, setAssigning] = useState<Appointment | null>(null);
   const [selectedPackage, setSelectedPackage] = useState<string>('');
+  const [serviceDropdownOpen, setServiceDropdownOpen] = useState(false);
+  const [serviceSearch, setServiceSearch] = useState('');
   const [doctorFilter, setDoctorFilter] = useState('All doctors');
   const [dateFilter, setDateFilter] = useState('');
   const [calendarDate, setCalendarDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [viewRange, setViewRange] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const serviceDropdownRef = useRef<HTMLDivElement | null>(null);
   const doctorOptions = useMemo(() => {
     const list = staff
       .filter((member) => member.role === 'Doctor' && member.status === 'Active')
@@ -89,9 +93,27 @@ export const AppointmentsPage: React.FC = () => {
     paymentStatus: 'Unpaid' as Appointment['paymentStatus'],
     paymentMethod: 'CASH' as Appointment['paymentMethod'],
   });
-  const [addTreatments, setAddTreatments] = useState(false);
-  const [treatmentSelect, setTreatmentSelect] = useState('');
   const [treatments, setTreatments] = useState<Array<{ name: string; price: number }>>([]);
+  const filteredServiceOptions = useMemo(
+    () => serviceOptions.filter((svc) => svc.toLowerCase().includes(serviceSearch.trim().toLowerCase())),
+    [serviceOptions, serviceSearch]
+  );
+
+  useEffect(() => {
+    void hydrateAppointments();
+    void hydrateServices();
+    void hydrateStaff();
+  }, [hydrateAppointments, hydrateServices, hydrateStaff]);
+
+  useEffect(() => {
+    if (!serviceDropdownOpen) return;
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (serviceDropdownRef.current?.contains(event.target as Node)) return;
+      setServiceDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [serviceDropdownOpen]);
 
   useEffect(() => {
     if (doctorOptions.length === 0) return;
@@ -108,29 +130,31 @@ export const AppointmentsPage: React.FC = () => {
   }, [serviceOptions, form.service]);
 
   useEffect(() => {
-    if (serviceOptions.length === 0) return;
-    if (!treatmentSelect) {
-      setTreatmentSelect(serviceOptions[0]);
-    }
-  }, [serviceOptions, treatmentSelect]);
-
-  useEffect(() => {
     if (!showFinancial) return;
-    if (addTreatments) {
+    if (treatments.length > 1) {
       const total = treatments.reduce((sum, item) => sum + item.price, 0);
       setForm((f) => ({ ...f, amount: total ? String(total) : '' }));
       return;
     }
-    const price = servicePriceMap.get(form.service) ?? 0;
-    setForm((f) => ({ ...f, amount: price ? String(price) : '' }));
-  }, [addTreatments, treatments, showFinancial, form.service, servicePriceMap]);
+    if (treatments.length === 1) {
+      const price = treatments[0]?.price ?? 0;
+      setForm((f) => ({ ...f, amount: price ? String(price) : '' }));
+      return;
+    }
+    setForm((f) => ({ ...f, amount: '' }));
+  }, [treatments, showFinancial]);
 
-  const handleAddTreatment = () => {
+  const handleToggleTreatment = (name: string, checked: boolean) => {
     if (isReadOnly) return;
-    if (!treatmentSelect) return;
-    const price = servicePriceMap.get(treatmentSelect) ?? 0;
-    if (treatments.some((item) => item.name === treatmentSelect)) return;
-    setTreatments((prev) => [...prev, { name: treatmentSelect, price }]);
+    if (!checked) {
+      setTreatments((prev) => prev.filter((item) => item.name !== name));
+      return;
+    }
+    const price = servicePriceMap.get(name) ?? 0;
+    setTreatments((prev) => {
+      if (prev.some((item) => item.name === name)) return prev;
+      return [...prev, { name, price }];
+    });
   };
 
   const handleRemoveTreatment = (name: string) => {
@@ -250,16 +274,11 @@ export const AppointmentsPage: React.FC = () => {
       .split(' + ')
       .map((part) => part.trim())
       .filter(Boolean);
-    const canHydrateTreatments =
-      parsedServices.length > 1 && parsedServices.every((name) => servicePriceMap.has(name));
+    const canHydrateTreatments = parsedServices.length > 0 && parsedServices.every((name) => servicePriceMap.has(name));
     if (canHydrateTreatments) {
-      setAddTreatments(true);
       setTreatments(parsedServices.map((name) => ({ name, price: servicePriceMap.get(name) ?? 0 })));
-      setTreatmentSelect('');
     } else {
-      setAddTreatments(false);
       setTreatments([]);
-      setTreatmentSelect('');
     }
     setEditingId(row.id);
     setForm({
@@ -278,6 +297,7 @@ export const AppointmentsPage: React.FC = () => {
       paymentStatus: row.paymentStatus,
       paymentMethod: row.paymentMethod ?? 'CASH',
     });
+    setServiceDropdownOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -352,15 +372,20 @@ export const AppointmentsPage: React.FC = () => {
   const handleAdd = () => {
     if (isReadOnly) return;
     if (!form.patient || !form.phone || !form.datetime) return;
+    if (treatments.length === 0) {
+      window.alert('Please select at least one treatment/service.');
+      return;
+    }
     if (form.scheduleNext && !form.nextDatetime) {
       window.alert('Please select a next appointment date/time.');
       return;
     }
-    const treatmentNames = addTreatments ? treatments.map((t) => t.name) : [];
+    const treatmentNames = treatments.map((t) => t.name);
     const totalTreatments = treatments.reduce((sum, item) => sum + item.price, 0);
-    const resolvedService = addTreatments && treatmentNames.length ? treatmentNames.join(' + ') : form.service;
-    const fallbackPrice = servicePriceMap.get(form.service) ?? 0;
-    const amountToSave = addTreatments ? totalTreatments : Number(form.amount) || fallbackPrice || 0;
+    const resolvedService = treatmentNames.join(' + ');
+    const fallbackPrice = treatments[0]?.price ?? 0;
+    const amountToSave =
+      treatments.length > 1 ? totalTreatments : Number(form.amount) || fallbackPrice || 0;
     const doctorValue =
       role === 'doctor' && doctorName ? doctorName.trim() : (form.doctor || '').trim() || doctorOptions[0];
     const payload = {
@@ -400,11 +425,12 @@ export const AppointmentsPage: React.FC = () => {
           method,
           amount: created.amount,
           discount: created.discount,
+          notes: created.notes,
           cash: method === 'CASH' ? paidAmount : 0,
           card: method === 'CARD' ? paidAmount : 0,
           bank: method === 'BANK_TRANSFER' ? paidAmount : 0,
           other: method === 'OTHER' ? paidAmount : 0,
-          source: `appointment:${created.id}`,
+          source: `Appointment - ${created.service} (${created.id})`,
         });
       }
       if (form.scheduleNext && form.nextDatetime) {
@@ -427,7 +453,7 @@ export const AppointmentsPage: React.FC = () => {
       datetime: '',
       scheduleNext: false,
       nextDatetime: '',
-      service: serviceOptions[0],
+      service: serviceOptions[0] ?? 'Skin Treatment',
       apptType: 'Consultation',
       centre: 'BRFSD',
       amount: '',
@@ -436,9 +462,9 @@ export const AppointmentsPage: React.FC = () => {
       paymentStatus: 'Unpaid',
       paymentMethod: 'CASH',
     });
-    setAddTreatments(false);
     setTreatments([]);
-    setTreatmentSelect('');
+    setServiceDropdownOpen(false);
+    setServiceSearch('');
   };
 
   useEffect(() => {
@@ -487,7 +513,7 @@ export const AppointmentsPage: React.FC = () => {
             <div className="muted">Enter patient, doctor, date/time, amount; status starts Pending</div>
           </div>
           <button className="pill" onClick={handleAdd} disabled={isReadOnly}>
-            {editingId ? 'Update Appointment' : '+ Add Appointment'}
+            {editingId ? 'Update Appointment' : <><PlusIcon /> Add Appointment</>}
           </button>
         </div>
         <div className="form-grid">
@@ -552,55 +578,71 @@ export const AppointmentsPage: React.FC = () => {
               disabled={isReadOnly}
             />
           )}
-          <label className="pill pill--ghost" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="checkbox"
-              checked={addTreatments}
-              onChange={(e) => {
-                const next = e.target.checked;
-                setAddTreatments(next);
-                if (!next) {
-                  setTreatments([]);
-                }
-              }}
-              disabled={isReadOnly}
-            />
-            <span>Add treatments to booking</span>
-          </label>
-          {addTreatments ? (
-            <div className="form-row" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <select
-                className="input"
-                value={treatmentSelect}
-                onChange={(e) => setTreatmentSelect(e.target.value)}
-                style={{ flex: 1 }}
-                disabled={isReadOnly}
-              >
-                {serviceOptions.map((svc) => (
-                  <option key={svc} value={svc}>
-                    {svc} {servicePriceMap.has(svc) ? `- PKR ${servicePriceMap.get(svc)?.toLocaleString()}` : ''}
-                  </option>
-                ))}
-              </select>
-              <button type="button" className="pill" onClick={handleAddTreatment} disabled={isReadOnly}>
-                Add
-              </button>
-            </div>
-          ) : (
-            <select
+          <div ref={serviceDropdownRef} style={{ gridColumn: '1 / -1', position: 'relative' }}>
+            <button
+              type="button"
               className="input"
-              value={form.service}
-              onChange={(e) => setForm((f) => ({ ...f, service: e.target.value }))}
+              onClick={() => setServiceDropdownOpen((prev) => !prev)}
               disabled={isReadOnly}
+              style={{ textAlign: 'left' }}
             >
-              {serviceOptions.map((svc) => (
-                <option key={svc} value={svc}>
-                  {svc}
-                </option>
-              ))}
-            </select>
-          )}
-          {addTreatments && treatments.length > 0 && (
+              {treatments.length
+                ? `${treatments.length} treatment${treatments.length === 1 ? '' : 's'} selected`
+                : 'Select treatments/services'}
+            </button>
+            {serviceDropdownOpen && (
+              <div
+                className="panel"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  left: 0,
+                  right: 0,
+                  zIndex: 20,
+                  padding: 12,
+                }}
+              >
+                <div className="muted small" style={{ marginBottom: 8 }}>
+                  Search and tick one or more treatments/services
+                </div>
+                <input
+                  className="input"
+                  placeholder="Search services..."
+                  value={serviceSearch}
+                  onChange={(e) => setServiceSearch(e.target.value)}
+                />
+                <div className="muted small" style={{ marginTop: 8 }}>
+                  Showing {filteredServiceOptions.length} of {serviceOptions.length} active services
+                </div>
+                <div style={{ maxHeight: 280, overflowY: 'auto', display: 'grid', gap: 8, marginTop: 10 }}>
+                  {filteredServiceOptions.map((svc) => {
+                    const checked = treatments.some((item) => item.name === svc);
+                    return (
+                      <label
+                        key={svc}
+                        className={`pill ${checked ? '' : 'pill--ghost'}`}
+                        style={{ cursor: isReadOnly ? 'default' : 'pointer' }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => handleToggleTreatment(svc, e.target.checked)}
+                          disabled={isReadOnly}
+                        />
+                        <span>
+                          {svc} {servicePriceMap.has(svc) ? `- PKR ${servicePriceMap.get(svc)?.toLocaleString()}` : ''}
+                        </span>
+                      </label>
+                    );
+                  })}
+                  {filteredServiceOptions.length === 0 && (
+                    <div className="muted small">No services match this search.</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          {treatments.length > 0 && (
             <div className="panel" style={{ gridColumn: '1 / -1', padding: 12 }}>
               <div className="muted small">Selected treatments</div>
               <div className="action-stack" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -644,7 +686,7 @@ export const AppointmentsPage: React.FC = () => {
                 className="input"
                 placeholder="Amount"
                 value={form.amount}
-                disabled={addTreatments || isReadOnly}
+                disabled={treatments.length > 1 || isReadOnly}
                 onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
               />
               <input
@@ -665,6 +707,19 @@ export const AppointmentsPage: React.FC = () => {
                 <option value="Unpaid">Unpaid</option>
                 <option value="Partial">Partial</option>
                 <option value="Paid">Paid</option>
+              </select>
+              <select
+                className="input"
+                value={form.paymentMethod}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, paymentMethod: e.target.value as Appointment['paymentMethod'] }))
+                }
+                disabled={isReadOnly}
+              >
+                <option value="CASH">Cash</option>
+                <option value="CARD">Card</option>
+                <option value="BANK_TRANSFER">Bank Transfer</option>
+                <option value="OTHER">Other</option>
               </select>
             </>
           )}
@@ -735,17 +790,19 @@ export const AppointmentsPage: React.FC = () => {
               </select>
             )}
             <button
-              className="pill pill--ghost"
+              className="icon-btn"
               onClick={() => {
                 setViewRange('all');
                 setDoctorFilter('All doctors');
                 setDateFilter('');
               }}
+              aria-label="Clear filters"
+              title="Clear filters"
             >
-              Clear Filters
+              <FilterXIcon />
             </button>
-            <button className="pill pill--ghost" onClick={handleExport}>
-              Export CSV
+            <button className="icon-btn" onClick={handleExport} aria-label="Export CSV" title="Export CSV">
+              <DownloadIcon />
             </button>
           </div>
         </div>
@@ -1038,16 +1095,27 @@ export const AppointmentsPage: React.FC = () => {
                 <thead>
                   <tr>
                     <th>Treatment</th>
+                    <th>Price</th>
                   </tr>
                 </thead>
                 <tbody>
                   {treatmentRows.map((row) => (
                     <tr key={row.name}>
                       <td>{row.name}</td>
+                      <td>{formatMoney(row.price)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </section>
+          )}
+
+          {printAppointment.notes && printAppointment.notes !== '-' && (
+            <section className="consultation-block">
+              <div className="consultation-block__title">Notes</div>
+              <div className="consultation-notes" style={{ padding: 8, height: 'auto', minHeight: 70 }}>
+                {printAppointment.notes}
+              </div>
             </section>
           )}
 

@@ -8,6 +8,7 @@ type ClinicalServicesState = {
   error: string | null;
   hydrate: () => Promise<void>;
   addService: (service: Omit<ClinicalService, 'id'>) => Promise<ClinicalService | null>;
+  updateService: (id: string, changes: Partial<Omit<ClinicalService, 'id'>>) => Promise<ClinicalService | null>;
   removeService: (id: string) => Promise<void>;
 };
 
@@ -60,7 +61,9 @@ export const useClinicalServices = create<ClinicalServicesState>((set, get) => (
       });
       return;
     }
-    set({ services: data as ClinicalService[], isLoading: false, error: null });
+    const mapped = data as ClinicalService[];
+    persistServices(mapped);
+    set({ services: mapped, isLoading: false, error: null });
   },
   addService: async (service) => {
     const fallbackId = createLocalId();
@@ -84,8 +87,48 @@ export const useClinicalServices = create<ClinicalServicesState>((set, get) => (
       return null;
     }
     const created = data as ClinicalService;
-    set((state) => ({ services: [created, ...state.services] }));
+    set((state) => {
+      const next = [created, ...state.services];
+      persistServices(next);
+      return { services: next, error: null };
+    });
     return created;
+  },
+  updateService: async (id, changes) => {
+    const current = get().services.find((service) => service.id === id);
+    if (!current) {
+      set({ error: 'Service not found.' });
+      return null;
+    }
+
+    const updated: ClinicalService = { ...current, ...changes, id };
+
+    if (!isSupabaseConfigured || !supabase) {
+      set((state) => {
+        const next = state.services.map((service) => (service.id === id ? updated : service));
+        persistServices(next);
+        return { services: next, error: null };
+      });
+      return updated;
+    }
+
+    const { data, error } = await supabase
+      .from('clinical_services')
+      .upsert(updated, { onConflict: 'id' })
+      .select('*')
+      .single();
+    if (error || !data) {
+      set({ error: error?.message ?? 'Failed to update service.' });
+      return null;
+    }
+
+    const saved = data as ClinicalService;
+    set((state) => {
+      const next = state.services.map((service) => (service.id === id ? saved : service));
+      persistServices(next);
+      return { services: next, error: null };
+    });
+    return saved;
   },
   removeService: async (id) => {
     if (!isSupabaseConfigured || !supabase) {
@@ -102,6 +145,7 @@ export const useClinicalServices = create<ClinicalServicesState>((set, get) => (
       return;
     }
     const next = get().services.filter((s) => s.id !== id);
-    set({ services: next });
+    persistServices(next);
+    set({ services: next, error: null });
   },
 }));

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { hashPassword } from '../utils/password';
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 
 export type StaffRole = 'Doctor' | 'Nurse' | 'Reception' | 'Admin' | 'Technician' | 'FDO';
 
@@ -18,6 +19,9 @@ export type StaffMember = {
 
 type StaffState = {
   staff: StaffMember[];
+  isLoading: boolean;
+  error: string | null;
+  hydrate: () => Promise<void>;
   addStaff: (member: Omit<StaffMember, 'id'>) => StaffMember;
   updateStatus: (id: string, status: StaffMember['status']) => void;
   removeStaff: (id: string) => void;
@@ -56,8 +60,66 @@ const persistStaff = (rows: StaffMember[]) => {
   }
 };
 
+type StaffRow = {
+  id: string;
+  name: string;
+  role: StaffRole;
+  phone: string;
+  email: string;
+  specialty: string | null;
+  branch: string | null;
+  status: 'Active' | 'Inactive';
+  password_hash: string | null;
+};
+
+const toModel = (row: StaffRow): StaffMember => ({
+  id: row.id,
+  name: row.name,
+  role: row.role,
+  phone: row.phone,
+  email: row.email,
+  specialty: row.specialty ?? undefined,
+  branch: row.branch ?? undefined,
+  status: row.status,
+  passwordHash: row.password_hash ?? undefined,
+});
+
+const toRowPayload = (member: StaffMember) => ({
+  id: member.id,
+  name: member.name,
+  role: member.role,
+  phone: member.phone,
+  email: member.email,
+  specialty: member.specialty ?? null,
+  branch: member.branch ?? null,
+  status: member.status,
+  password_hash: member.passwordHash ?? null,
+});
+
 export const useStaff = create<StaffState>((set) => ({
   staff: loadStaff(),
+  isLoading: false,
+  error: null,
+  hydrate: async () => {
+    if (!isSupabaseConfigured || !supabase) {
+      const cached = loadStaff();
+      set({ staff: cached, isLoading: false, error: null });
+      return;
+    }
+    set({ isLoading: true, error: null });
+    const { data, error } = await supabase.from('staff').select('*').order('name', { ascending: true });
+    if (error || !data) {
+      set({
+        staff: loadStaff(),
+        isLoading: false,
+        error: error?.message ?? 'Failed to load staff from database.',
+      });
+      return;
+    }
+    const mapped = (data as StaffRow[]).map(toModel);
+    persistStaff(mapped);
+    set({ staff: mapped, isLoading: false, error: null });
+  },
   addStaff: (member) => {
     let created: StaffMember | null = null;
     set((state) => {
@@ -70,22 +132,55 @@ export const useStaff = create<StaffState>((set) => ({
       persistStaff(next);
       return { staff: next };
     });
+    if (created && isSupabaseConfigured && supabase) {
+      void supabase.from('staff').upsert(toRowPayload(created), { onConflict: 'id' }).then(({ error }) => {
+        if (error) {
+          set({ error: error.message });
+        }
+      });
+    }
     return created!;
   },
   updateStatus: (id, status) =>
     set((state) => {
       const next = state.staff.map((s) => (s.id === id ? { ...s, status } : s));
       persistStaff(next);
+      if (isSupabaseConfigured && supabase) {
+        void supabase.from('staff').update({ status }).eq('id', id).then(({ error }) => {
+          if (error) {
+            set({ error: error.message });
+          }
+        });
+      }
       return { staff: next };
     }),
   removeStaff: (id) =>
     set((state) => {
       const next = state.staff.filter((s) => s.id !== id);
       persistStaff(next);
+      if (isSupabaseConfigured && supabase) {
+        void supabase.from('staff').delete().eq('id', id).then(({ error }) => {
+          if (error) {
+            set({ error: error.message });
+          }
+        });
+      }
       return { staff: next };
     }),
   verifyStaffCredentials: async (email, password) => {
     const hash = await hashPassword(password);
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('staff')
+        .select('*')
+        .ilike('email', email.trim())
+        .eq('password_hash', hash)
+        .eq('status', 'Active')
+        .maybeSingle();
+      if (!error && data) {
+        return toModel(data as StaffRow);
+      }
+    }
     const state = useStaff.getState();
     const member = state.staff.find(
       (s) =>

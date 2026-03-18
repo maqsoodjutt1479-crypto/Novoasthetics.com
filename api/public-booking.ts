@@ -1,3 +1,5 @@
+import { createClient } from '@supabase/supabase-js';
+
 type BookingPayload = {
   name?: string;
   phone?: string;
@@ -6,6 +8,21 @@ type BookingPayload = {
   doctor?: string;
   preferredDateTime?: string;
   notes?: string;
+};
+
+const createSupabaseServerClient = () => {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  const supabaseKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    '';
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Missing Supabase environment variables');
+  }
+
+  return createClient(supabaseUrl, supabaseKey);
 };
 
 const buildMessage = (payload: BookingPayload) => {
@@ -58,24 +75,78 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const payload: BookingPayload =
-    typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+  const payload: BookingPayload = (() => {
+    try {
+      return typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    } catch {
+      return {};
+    }
+  })();
+
+  const name = payload.name?.trim() || '';
+  const phone = payload.phone?.trim() || '';
+  const service = payload.service?.trim() || '';
+  const doctor = payload.doctor?.trim() || '';
+  const preferredDateTime = payload.preferredDateTime?.trim() || '';
+  const notes = payload.notes?.trim() || '-';
+
+  if (!name || !phone || !service || !doctor || !preferredDateTime) {
+    res.status(400).json({ ok: false, error: 'Missing required fields' });
+    return;
+  }
 
   const id = `PB-${Date.now()}`;
 
   try {
-    if (payload.phone?.trim()) {
-      await sendSms(payload.phone.trim(), buildMessage(payload));
+    const supabase = createSupabaseServerClient();
+    const { error: insertError } = await supabase.from('appointments').insert({
+      id,
+      patient_id: id,
+      patient: name,
+      phone,
+      doctor,
+      datetime: preferredDateTime,
+      service,
+      appt_type: 'Public Booking',
+      centre: 'WEB',
+      status: 'Pending',
+      amount: 0,
+      discount: '0%',
+      notes,
+      payment_status: 'Unpaid',
+      payment_method: 'OTHER',
+    });
+
+    if (insertError) {
+      throw new Error(`Supabase insert failed: ${insertError.message}`);
+    }
+
+    const smsErrors: string[] = [];
+
+    try {
+      await sendSms(phone, buildMessage(payload));
+    } catch (err) {
+      console.error(err);
+      smsErrors.push('patient');
     }
 
     const adminTo = process.env.TWILIO_ADMIN_TO || '';
     if (adminTo.trim()) {
-      await sendSms(adminTo.trim(), buildAdminMessage(payload, id));
+      try {
+        await sendSms(adminTo.trim(), buildAdminMessage(payload, id));
+      } catch (err) {
+        console.error(err);
+        smsErrors.push('admin');
+      }
     }
 
-    res.status(200).json({ ok: true, id });
+    res.status(200).json({
+      ok: true,
+      id,
+      smsWarning: smsErrors.length ? `SMS failed for: ${smsErrors.join(', ')}` : undefined,
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ ok: false, error: 'Failed to send SMS' });
+    res.status(500).json({ ok: false, error: 'Failed to save booking' });
   }
 }

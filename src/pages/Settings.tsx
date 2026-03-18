@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTheme } from '../components/ThemeProvider';
 import { useAuth } from '../components/AuthProvider';
+import { MoonIcon, SunIcon } from '../components/UiIcons';
 
 export const SettingsPage: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
@@ -22,8 +23,14 @@ export const SettingsPage: React.FC = () => {
               <div className="strong">Theme</div>
               <div className="muted small">Light / Dark mode</div>
             </div>
-            <button className="pill" onClick={toggleTheme} disabled={isReadOnly}>
-              {theme === 'light' ? 'Switch to Dark' : 'Switch to Light'}
+            <button
+              className="icon-btn"
+              onClick={toggleTheme}
+              disabled={isReadOnly}
+              aria-label={theme === 'light' ? 'Dark mode' : 'Light mode'}
+              title={theme === 'light' ? 'Dark mode' : 'Light mode'}
+            >
+              {theme === 'light' ? <MoonIcon /> : <SunIcon />}
             </button>
           </div>
           <div className="form-row">
@@ -46,13 +53,6 @@ export const SettingsPage: React.FC = () => {
               <option>Dr. Fatima</option>
               <option>Dr. Ali</option>
             </select>
-          </div>
-          <div className="form-row">
-            <div>
-              <div className="strong">AI Agent (future)</div>
-              <div className="muted small">Enable automated reminders & scheduling</div>
-            </div>
-            <div className="pill pill--ghost">Coming soon</div>
           </div>
         </div>
       </div>
