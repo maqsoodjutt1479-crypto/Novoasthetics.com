@@ -1,1 +1,1 @@
-export const adminOnlyNavLabels = new Set(['Dashboard', 'Products', 'Payments', 'Reports']);
+export const adminOnlyNavLabels = new Set(['Dashboard', 'Reports']);

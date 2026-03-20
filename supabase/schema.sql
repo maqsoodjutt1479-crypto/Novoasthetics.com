@@ -113,6 +113,18 @@ create table if not exists public.package_assignments (
 
 create index if not exists idx_package_assignments_assigned_at on public.package_assignments (assigned_at);
 
+create table if not exists public.packages (
+  id text primary key,
+  name text not null unique,
+  services jsonb not null default '[]'::jsonb,
+  price text not null,
+  duration text not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_packages_name on public.packages (name);
+
 do $$
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
@@ -164,6 +176,13 @@ begin
     ) then
       execute 'alter publication supabase_realtime add table public.package_assignments';
     end if;
+
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'packages'
+    ) then
+      execute 'alter publication supabase_realtime add table public.packages';
+    end if;
   end if;
 end
 $$;
@@ -175,6 +194,7 @@ alter table public.payments enable row level security;
 alter table public.products enable row level security;
 alter table public.product_orders enable row level security;
 alter table public.package_assignments enable row level security;
+alter table public.packages enable row level security;
 
 drop policy if exists staff_open_access on public.staff;
 create policy staff_open_access on public.staff
@@ -220,6 +240,13 @@ create policy product_orders_open_access on public.product_orders
 
 drop policy if exists package_assignments_open_access on public.package_assignments;
 create policy package_assignments_open_access on public.package_assignments
+  for all
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists packages_open_access on public.packages;
+create policy packages_open_access on public.packages
   for all
   to anon, authenticated
   using (true)

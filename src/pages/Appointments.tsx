@@ -3,8 +3,8 @@ import { StatusBadge } from '../components/StatusBadge';
 import { useAppointments, type Appointment, type AppointmentStatus } from '../store/useAppointments';
 import { useAuth } from '../components/AuthProvider';
 import { useNotifications } from '../store/useNotifications';
-import { packages } from '../data/packages';
 import { usePackageAssignments } from '../store/usePackageAssignments';
+import { usePackages } from '../store/usePackages';
 import logo from '../assets/novo-logo.svg';
 import { useClinicalServices } from '../store/useClinicalServices';
 import { useStaff } from '../store/useStaff';
@@ -29,6 +29,7 @@ export const AppointmentsPage: React.FC = () => {
   const { upsertPayment } = usePayments();
   const { addFromAppointment, markByAppointment } = useNotifications();
   const { addAssignment } = usePackageAssignments();
+  const { packages, hydrate: hydratePackages } = usePackages();
   const { services, hydrate: hydrateServices } = useClinicalServices();
   const { staff, hydrate: hydrateStaff } = useStaff();
   const {
@@ -102,9 +103,10 @@ export const AppointmentsPage: React.FC = () => {
 
   useEffect(() => {
     void hydrateAppointments();
+    void hydratePackages();
     void hydrateServices();
     void hydrateStaff();
-  }, [hydrateAppointments, hydrateServices, hydrateStaff]);
+  }, [hydrateAppointments, hydratePackages, hydrateServices, hydrateStaff]);
 
   useEffect(() => {
     if (!serviceDropdownOpen) return;
@@ -1231,7 +1233,7 @@ export const AppointmentsPage: React.FC = () => {
                 onChange={(e) => setSelectedPackage(e.target.value)}
               >
                 <option value="">-- Select Package --</option>
-                {packages.map((pkg) => (
+                {packages.filter((pkg) => pkg.active).map((pkg) => (
                   <option key={pkg.name} value={pkg.name}>
                     {pkg.name}
                   </option>

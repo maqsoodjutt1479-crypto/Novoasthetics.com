@@ -15,7 +15,8 @@ export const ProductsPage: React.FC = () => {
   const { products, orders, error, hydrate: hydrateSales, addProduct, updateProduct, removeProduct, addOrder, updateOrder, adjustInventoryForEdit } = useProductSales();
   const { hydrate: hydratePayments, addPayment } = usePayments();
   const { user } = useAuth();
-  const isReadOnly = user?.role === 'fdo';
+  const canManageProducts = user?.role === 'admin' || user?.role === 'fdo';
+  const isReadOnly = !canManageProducts;
   const [orderId, setOrderId] = useState('');
   const [patientSearch, setPatientSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');

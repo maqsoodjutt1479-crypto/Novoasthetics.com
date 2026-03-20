@@ -43,7 +43,8 @@ const getWeekKey = (date: Date) => {
 export const PaymentsPage: React.FC = () => {
   const { payments, hydrate, addPayment } = usePayments();
   const { user } = useAuth();
-  const isReadOnly = user?.role === 'fdo';
+  const canManagePayments = user?.role === 'admin' || user?.role === 'fdo';
+  const isReadOnly = !canManagePayments;
   const [range, setRange] = useState<RangeFilter>('all');
   const [historyView, setHistoryView] = useState<HistoryView>('day');
   const [from, setFrom] = useState('');

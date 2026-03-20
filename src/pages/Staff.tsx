@@ -8,7 +8,8 @@ import { FilterXIcon, PowerIcon, TrashIcon } from '../components/UiIcons';
 export const StaffPage: React.FC = () => {
   const { staff, hydrate, addStaff, updateStatus, removeStaff } = useStaff();
   const { user } = useAuth();
-  const isReadOnly = user?.role === 'fdo';
+  const canManageStaff = user?.role === 'admin' || user?.role === 'fdo';
+  const isReadOnly = !canManageStaff;
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState<'All' | StaffRole>('All');
   const [form, setForm] = useState({

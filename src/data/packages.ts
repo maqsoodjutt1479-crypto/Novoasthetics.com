@@ -6,7 +6,7 @@ export type PackageDefinition = {
   active: boolean;
 };
 
-export const packages: PackageDefinition[] = [
+export const initialPackageDefinitions: PackageDefinition[] = [
   {
     name: 'Glow-up',
     services: ['Laser Face x4', 'PRP x2', 'Serum kit'],

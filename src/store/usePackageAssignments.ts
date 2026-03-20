@@ -16,6 +16,7 @@ type PackageAssignmentState = {
   error: string | null;
   hydrate: () => Promise<void>;
   addAssignment: (payload: Omit<PackageAssignment, 'id' | 'assignedAt'>) => PackageAssignment;
+  renamePackageName: (previousName: string, nextName: string) => Promise<void>;
 };
 
 const STORAGE_KEY = 'clinic-package-assignments';
@@ -118,5 +119,29 @@ export const usePackageAssignments = create<PackageAssignmentState>((set) => ({
       return { assignments: next };
     });
     return created!;
+  },
+  renamePackageName: async (previousName, nextName) => {
+    const trimmedPrevious = previousName.trim();
+    const trimmedNext = nextName.trim();
+    if (!trimmedPrevious || !trimmedNext || trimmedPrevious === trimmedNext) return;
+
+    const state = usePackageAssignments.getState();
+    const nextRows = state.assignments.map((assignment) =>
+      assignment.packageName === trimmedPrevious
+        ? { ...assignment, packageName: trimmedNext }
+        : assignment
+    );
+    persistAssignments(nextRows);
+    set({ assignments: nextRows, error: null });
+
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase
+        .from('package_assignments')
+        .update({ package_name: trimmedNext })
+        .eq('package_name', trimmedPrevious);
+      if (error) {
+        set({ error: error.message });
+      }
+    }
   },
 }));

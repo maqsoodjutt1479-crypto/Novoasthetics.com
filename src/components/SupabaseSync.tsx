@@ -3,6 +3,7 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 import { useAppointments } from '../store/useAppointments';
 import { useClinicalServices } from '../store/useClinicalServices';
 import { usePackageAssignments } from '../store/usePackageAssignments';
+import { usePackages } from '../store/usePackages';
 import { usePayments } from '../store/usePayments';
 import { useProductSales } from '../store/useProductSales';
 import { useStaff } from '../store/useStaff';
@@ -12,6 +13,7 @@ export const SupabaseSync: React.FC = () => {
   const { hydrate: hydratePayments } = usePayments();
   const { hydrate: hydrateStaff } = useStaff();
   const { hydrate: hydrateServices } = useClinicalServices();
+  const { hydrate: hydratePackages } = usePackages();
   const { hydrate: hydrateAssignments } = usePackageAssignments();
   const { hydrate: hydrateSales } = useProductSales();
 
@@ -45,6 +47,9 @@ export const SupabaseSync: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'clinical_services' }, () => {
         scheduleHydrate('clinical_services', hydrateServices);
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'packages' }, () => {
+        scheduleHydrate('packages', hydratePackages);
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'package_assignments' }, () => {
         scheduleHydrate('package_assignments', hydrateAssignments);
       })
@@ -63,6 +68,7 @@ export const SupabaseSync: React.FC = () => {
   }, [
     hydrateAppointments,
     hydrateAssignments,
+    hydratePackages,
     hydratePayments,
     hydrateSales,
     hydrateServices,

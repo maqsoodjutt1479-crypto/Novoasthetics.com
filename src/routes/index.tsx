@@ -111,7 +111,7 @@ export const AppRoutes: React.FC = () => (
       path="/products"
       element={
         <PrivateRoute>
-          <RoleGuard allowed={['admin']} fallback="/appointments">
+          <RoleGuard allowed={['admin', 'fdo']} fallback="/appointments">
             <AppLayout title="Products">
               <ProductsPage />
             </AppLayout>
@@ -123,7 +123,7 @@ export const AppRoutes: React.FC = () => (
       path="/payments"
       element={
         <PrivateRoute>
-          <RoleGuard allowed={['admin']} fallback="/appointments">
+          <RoleGuard allowed={['admin', 'fdo']} fallback="/appointments">
             <AppLayout title="Payments & Revenue">
               <PaymentsPage />
             </AppLayout>
