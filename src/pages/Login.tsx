@@ -5,7 +5,7 @@ import { useStaff } from '../store/useStaff';
 import logo from '../assets/novo-logo.svg';
 
 const ADMIN_EMAIL = 'admin.novoasthetics@novo-asthetics.com';
-const ADMIN_PASS = 'admin@nova123';
+const ADMIN_PASS = 'admin@novo9009';
 
 export const LoginPage: React.FC = () => {
   const { setRole } = useAuth();
