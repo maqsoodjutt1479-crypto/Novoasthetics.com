@@ -32,9 +32,9 @@ type ProductSalesState = {
   isLoading: boolean;
   error: string | null;
   hydrate: () => Promise<void>;
-  addProduct: (product: Omit<ProductRow, 'id'>) => ProductRow;
-  updateProduct: (id: string, changes: Partial<Omit<ProductRow, 'id'>>) => void;
-  removeProduct: (id: string) => void;
+  addProduct: (product: Omit<ProductRow, 'id'>) => Promise<ProductRow | null>;
+  updateProduct: (id: string, changes: Partial<Omit<ProductRow, 'id'>>) => Promise<ProductRow | null>;
+  removeProduct: (id: string) => Promise<boolean>;
   addOrder: (payload: {
     patient: string;
     patientId?: string;
@@ -42,9 +42,9 @@ type ProductSalesState = {
     location: string;
     paid: number;
     method: 'CASH' | 'CARD' | 'BANK_TRANSFER' | 'OTHER';
-  }) => Order | null;
-  updateOrder: (id: string, changes: Partial<Order>) => void;
-  adjustInventoryForEdit: (prev: Order, next: Order) => void;
+  }) => Promise<Order | null>;
+  updateOrder: (id: string, changes: Partial<Order>) => Promise<Order | null>;
+  updateOrderWithInventory: (prev: Order, next: Order) => Promise<Order | null>;
 };
 
 const PRODUCTS_KEY = 'clinic-products';
@@ -151,7 +151,60 @@ const toOrderModel = (row: OrderRowDb): Order => ({
   createdAt: row.created_at,
 });
 
-export const useProductSales = create<ProductSalesState>((set) => ({
+const orderItems = (order: Order) =>
+  order.items?.length
+    ? order.items
+    : [{ name: order.products.split(' x')[0], qty: order.qty, unitPrice: order.unitPrice || order.total / Math.max(1, order.qty) }];
+
+const calculateEditedProducts = (products: ProductRow[], prev: Order, next: Order): ProductRow[] | null => {
+  const prevItems = orderItems(prev);
+  const nextItems = orderItems(next);
+  if (prevItems.length !== 1 || nextItems.length !== 1) {
+    return null;
+  }
+
+  const prevItem = prevItems[0];
+  const nextItem = nextItems[0];
+  const prevProductIndex = products.findIndex((product) => product.name === prevItem.name);
+  const nextProductIndex = products.findIndex((product) => product.name === nextItem.name);
+  if (prevProductIndex === -1 || nextProductIndex === -1) {
+    return null;
+  }
+
+  const nextProducts = [...products];
+  if (prevItem.name === nextItem.name) {
+    const delta = nextItem.qty - prevItem.qty;
+    const product = nextProducts[prevProductIndex];
+    if (delta > 0 && product.stock < delta) {
+      return null;
+    }
+    nextProducts[prevProductIndex] = {
+      ...product,
+      stock: Math.max(0, product.stock - delta),
+      sold: Math.max(0, product.sold + delta),
+    };
+    return nextProducts;
+  }
+
+  const previousProduct = nextProducts[prevProductIndex];
+  const replacementProduct = nextProducts[nextProductIndex];
+  if (replacementProduct.stock < nextItem.qty) {
+    return null;
+  }
+  nextProducts[prevProductIndex] = {
+    ...previousProduct,
+    stock: previousProduct.stock + prevItem.qty,
+    sold: Math.max(0, previousProduct.sold - prevItem.qty),
+  };
+  nextProducts[nextProductIndex] = {
+    ...replacementProduct,
+    stock: Math.max(0, replacementProduct.stock - nextItem.qty),
+    sold: replacementProduct.sold + nextItem.qty,
+  };
+  return nextProducts;
+};
+
+export const useProductSales = create<ProductSalesState>((set, get) => ({
   products: loadRows(PRODUCTS_KEY, initialProducts),
   orders: loadRows(ORDERS_KEY, initialOrders),
   isLoading: false,
@@ -193,192 +246,256 @@ export const useProductSales = create<ProductSalesState>((set) => ({
     persistRows(ORDERS_KEY, mappedOrders);
     set({ products: mappedProducts, orders: mappedOrders, isLoading: false, error: null });
   },
-  addProduct: (product) => {
-    let created: ProductRow | null = null;
+  addProduct: async (product) => {
+    const created: ProductRow = {
+      ...product,
+      id: `PD-${Math.floor(100 + Math.random() * 900)}`,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('products')
+        .upsert(toProductPayload(created), { onConflict: 'id' })
+        .select('*')
+        .single();
+      if (error || !data) {
+        set({ error: error?.message ?? 'Failed to save product.' });
+        return null;
+      }
+      const saved = data as ProductRow;
+      set((state) => {
+        const next = [saved, ...state.products];
+        persistRows(PRODUCTS_KEY, next);
+        return { products: next, error: null };
+      });
+      return saved;
+    }
+
     set((state) => {
-      created = {
-        ...product,
-        id: `PD-${Math.floor(100 + Math.random() * 900)}`,
-      };
       const next = [created, ...state.products];
       persistRows(PRODUCTS_KEY, next);
-      if (isSupabaseConfigured && supabase) {
-        void supabase.from('products').upsert(toProductPayload(created), { onConflict: 'id' }).then(({ error }) => {
-          if (error) {
-            set({ error: error.message });
-          }
-        });
-      }
-      return { products: next };
-    });
-    return created!;
-  },
-  updateProduct: (id, changes) =>
-    set((state) => {
-      const next = state.products.map((product) =>
-        product.id === id ? { ...product, ...changes } : product
-      );
-      persistRows(PRODUCTS_KEY, next);
-      if (isSupabaseConfigured && supabase) {
-        const updated = next.find((product) => product.id === id);
-        if (updated) {
-          void supabase.from('products').upsert(toProductPayload(updated), { onConflict: 'id' }).then(({ error }) => {
-            if (error) {
-              set({ error: error.message });
-            }
-          });
-        }
-      }
-      return { products: next };
-    }),
-  removeProduct: (id) =>
-    set((state) => {
-      const target = state.products.find((product) => product.id === id);
-      if (!target) return state;
-      const inUse = state.orders.some((order) =>
-        (order.items ?? []).some((item) => item.name === target.name)
-      );
-      if (inUse) {
-        return { ...state, error: 'This product exists in sales history and cannot be deleted.' };
-      }
-      const next = state.products.filter((product) => product.id !== id);
-      persistRows(PRODUCTS_KEY, next);
-      if (isSupabaseConfigured && supabase) {
-        void supabase.from('products').delete().eq('id', id).then(({ error }) => {
-          if (error) {
-            set({ error: error.message });
-          }
-        });
-      }
       return { products: next, error: null };
-    }),
-  addOrder: (payload) => {
-    let created: Order | null = null;
-    set((state) => {
-      const items = payload.items
-        .filter((item) => item.name && item.qty > 0)
-        .map((item) => ({ ...item, qty: Math.floor(item.qty) }));
-      if (items.length === 0) return state;
-      const requiredByName = new Map<string, number>();
-      for (const item of items) {
-        requiredByName.set(item.name, (requiredByName.get(item.name) || 0) + item.qty);
-      }
-      for (const [name, qty] of requiredByName.entries()) {
-        const product = state.products.find((p) => p.name === name);
-        if (!product) return state;
-        if (product.stock < qty) return state;
-      }
-      const total = items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
-      const status =
-        payload.paid >= total
-          ? 'Paid'
-          : payload.paid > 0
-          ? 'Partial'
-          : 'Pending';
-      created = {
-        patient: payload.patient,
-        patientId: payload.patientId,
-        items,
-        products: items.map((item) => `${item.name} x${item.qty}`).join(', '),
-        qty: items.reduce((sum, item) => sum + item.qty, 0),
-        unitPrice: items.length === 1 ? items[0].unitPrice : 0,
-        id: `PO-${Math.floor(1000 + Math.random() * 9000)}`,
-        status,
-        createdAt: new Date().toISOString(),
-        location: payload.location,
-        total,
-        paid: payload.paid,
-        method: payload.method,
-      };
-      const nextProducts = state.products.map((product) => {
-        const used = requiredByName.get(product.name);
-        if (!used) return product;
-        return {
-          ...product,
-          stock: Math.max(0, product.stock - used),
-          sold: product.sold + used,
-        };
-      });
-      const nextOrders = [created, ...state.orders];
-      persistRows(PRODUCTS_KEY, nextProducts);
-      persistRows(ORDERS_KEY, nextOrders);
-      if (isSupabaseConfigured && supabase) {
-        void Promise.all([
-          supabase.from('product_orders').upsert(toOrderPayload(created), { onConflict: 'id' }),
-          supabase.from('products').upsert(nextProducts.map(toProductPayload), { onConflict: 'id' }),
-        ]).then((results) => {
-          const error = results.find((r) => r.error)?.error;
-          if (error) {
-            set({ error: error.message });
-          }
-        });
-      }
-      return { products: nextProducts, orders: nextOrders };
     });
     return created;
   },
-  updateOrder: (id, changes) =>
+  updateProduct: async (id, changes) => {
+    const current = get().products.find((product) => product.id === id);
+    if (!current) {
+      set({ error: 'Product not found.' });
+      return null;
+    }
+
+    const updated: ProductRow = { ...current, ...changes, id };
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('products')
+        .upsert(toProductPayload(updated), { onConflict: 'id' })
+        .select('*')
+        .single();
+      if (error || !data) {
+        set({ error: error?.message ?? 'Failed to update product.' });
+        return null;
+      }
+      const saved = data as ProductRow;
+      set((state) => {
+        const next = state.products.map((product) => (product.id === id ? saved : product));
+        persistRows(PRODUCTS_KEY, next);
+        return { products: next, error: null };
+      });
+      return saved;
+    }
+
     set((state) => {
-      const next = state.orders.map((order) => (order.id === id ? { ...order, ...changes } : order));
-      persistRows(ORDERS_KEY, next);
-      if (isSupabaseConfigured && supabase) {
-        const updated = next.find((order) => order.id === id);
-        if (updated) {
-          void supabase
-            .from('product_orders')
-            .upsert(toOrderPayload(updated), { onConflict: 'id' })
-            .then(({ error }) => {
-              if (error) {
-                set({ error: error.message });
-              }
-            });
-        }
+      const next = state.products.map((product) => (product.id === id ? updated : product));
+      persistRows(PRODUCTS_KEY, next);
+      return { products: next, error: null };
+    });
+    return updated;
+  },
+  removeProduct: async (id) => {
+    const state = get();
+    const target = state.products.find((product) => product.id === id);
+    if (!target) {
+      set({ error: 'Product not found.' });
+      return false;
+    }
+    const inUse = state.orders.some((order) =>
+      (order.items ?? []).some((item) => item.name === target.name)
+    );
+    if (inUse) {
+      set({ error: 'This product exists in sales history and cannot be deleted.' });
+      return false;
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.from('products').delete().eq('id', id);
+      if (error) {
+        set({ error: error.message });
+        return false;
       }
-      return { orders: next };
-    }),
-  adjustInventoryForEdit: (prev, next) =>
-    set((state) => {
-      if ((prev.items && prev.items.length > 1) || (next.items && next.items.length > 1)) {
-        return state;
+    }
+
+    set((current) => {
+      const next = current.products.filter((product) => product.id !== id);
+      persistRows(PRODUCTS_KEY, next);
+      return { products: next, error: null };
+    });
+    return true;
+  },
+  addOrder: async (payload) => {
+    const state = get();
+    const items = payload.items
+      .filter((item) => item.name && item.qty > 0)
+      .map((item) => ({ ...item, qty: Math.floor(item.qty) }));
+    if (items.length === 0) {
+      set({ error: 'Please add at least one valid product.' });
+      return null;
+    }
+
+    const requiredByName = new Map<string, number>();
+    for (const item of items) {
+      requiredByName.set(item.name, (requiredByName.get(item.name) || 0) + item.qty);
+    }
+    for (const [name, qty] of requiredByName.entries()) {
+      const product = state.products.find((row) => row.name === name);
+      if (!product) {
+        set({ error: `${name} was not found in stock.` });
+        return null;
       }
-      const [prevName] = prev.products.split(' x');
-      const [nextName] = next.products.split(' x');
-      const prevProductIndex = state.products.findIndex((p) => p.name === prevName);
-      const nextProductIndex = state.products.findIndex((p) => p.name === nextName);
-      if (prevProductIndex === -1 || nextProductIndex === -1) return state;
-      const nextProducts = [...state.products];
-      if (prevName === nextName) {
-        const delta = next.qty - prev.qty;
-        const product = nextProducts[prevProductIndex];
-        if (product.stock < delta) return state;
-        nextProducts[prevProductIndex] = {
-          ...product,
-          stock: Math.max(0, product.stock - delta),
-          sold: product.sold + delta,
-        };
-      } else {
-        const prevProduct = nextProducts[prevProductIndex];
-        const nextProduct = nextProducts[nextProductIndex];
-        if (nextProduct.stock < next.qty) return state;
-        nextProducts[prevProductIndex] = {
-          ...prevProduct,
-          stock: prevProduct.stock + prev.qty,
-          sold: Math.max(0, prevProduct.sold - prev.qty),
-        };
-        nextProducts[nextProductIndex] = {
-          ...nextProduct,
-          stock: Math.max(0, nextProduct.stock - next.qty),
-          sold: nextProduct.sold + next.qty,
-        };
+      if (product.stock < qty) {
+        set({ error: `Not enough stock for ${name}.` });
+        return null;
       }
+    }
+
+    const total = items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
+    const status =
+      payload.paid >= total
+        ? 'Paid'
+        : payload.paid > 0
+        ? 'Partial'
+        : 'Pending';
+    const created: Order = {
+      patient: payload.patient,
+      patientId: payload.patientId,
+      items,
+      products: items.map((item) => `${item.name} x${item.qty}`).join(', '),
+      qty: items.reduce((sum, item) => sum + item.qty, 0),
+      unitPrice: items.length === 1 ? items[0].unitPrice : 0,
+      id: `PO-${Math.floor(1000 + Math.random() * 9000)}`,
+      status,
+      createdAt: new Date().toISOString(),
+      location: payload.location,
+      total,
+      paid: payload.paid,
+      method: payload.method,
+    };
+    const nextProducts = state.products.map((product) => {
+      const used = requiredByName.get(product.name);
+      if (!used) return product;
+      return {
+        ...product,
+        stock: Math.max(0, product.stock - used),
+        sold: product.sold + used,
+      };
+    });
+
+    if (isSupabaseConfigured && supabase) {
+      const [orderResult, productsResult] = await Promise.all([
+        supabase.from('product_orders').upsert(toOrderPayload(created), { onConflict: 'id' }).select('*').single(),
+        supabase.from('products').upsert(nextProducts.map(toProductPayload), { onConflict: 'id' }),
+      ]);
+      const error = orderResult.error || productsResult.error;
+      if (error || !orderResult.data) {
+        set({ error: error?.message ?? 'Failed to create sale.' });
+        return null;
+      }
+      const saved = toOrderModel(orderResult.data as OrderRowDb);
+      set((current) => {
+        const nextOrders = [saved, ...current.orders];
+        persistRows(PRODUCTS_KEY, nextProducts);
+        persistRows(ORDERS_KEY, nextOrders);
+        return { products: nextProducts, orders: nextOrders, error: null };
+      });
+      return saved;
+    }
+
+    set((current) => {
+      const nextOrders = [created, ...current.orders];
       persistRows(PRODUCTS_KEY, nextProducts);
-      if (isSupabaseConfigured && supabase) {
-        void supabase.from('products').upsert(nextProducts.map(toProductPayload), { onConflict: 'id' }).then(({ error }) => {
-          if (error) {
-            set({ error: error.message });
-          }
-        });
+      persistRows(ORDERS_KEY, nextOrders);
+      return { products: nextProducts, orders: nextOrders, error: null };
+    });
+    return created;
+  },
+  updateOrder: async (id, changes) => {
+    const current = get().orders.find((order) => order.id === id);
+    if (!current) {
+      set({ error: 'Order not found.' });
+      return null;
+    }
+
+    const updated = { ...current, ...changes, id };
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('product_orders')
+        .upsert(toOrderPayload(updated), { onConflict: 'id' })
+        .select('*')
+        .single();
+      if (error || !data) {
+        set({ error: error?.message ?? 'Failed to update order.' });
+        return null;
       }
-      return { products: nextProducts };
-    }),
+      const saved = toOrderModel(data as OrderRowDb);
+      set((state) => {
+        const next = state.orders.map((order) => (order.id === id ? saved : order));
+        persistRows(ORDERS_KEY, next);
+        return { orders: next, error: null };
+      });
+      return saved;
+    }
+
+    set((state) => {
+      const next = state.orders.map((order) => (order.id === id ? updated : order));
+      persistRows(ORDERS_KEY, next);
+      return { orders: next, error: null };
+    });
+    return updated;
+  },
+  updateOrderWithInventory: async (prev, next) => {
+    const state = get();
+    const nextProducts = calculateEditedProducts(state.products, prev, next);
+    if (!nextProducts) {
+      set({ error: 'Unable to update stock for this order change.' });
+      return null;
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      const [orderResult, productsResult] = await Promise.all([
+        supabase.from('product_orders').upsert(toOrderPayload(next), { onConflict: 'id' }).select('*').single(),
+        supabase.from('products').upsert(nextProducts.map(toProductPayload), { onConflict: 'id' }),
+      ]);
+      const error = orderResult.error || productsResult.error;
+      if (error || !orderResult.data) {
+        set({ error: error?.message ?? 'Failed to update order.' });
+        return null;
+      }
+      const saved = toOrderModel(orderResult.data as OrderRowDb);
+      set((current) => {
+        const nextOrders = current.orders.map((order) => (order.id === saved.id ? saved : order));
+        persistRows(PRODUCTS_KEY, nextProducts);
+        persistRows(ORDERS_KEY, nextOrders);
+        return { products: nextProducts, orders: nextOrders, error: null };
+      });
+      return saved;
+    }
+
+    set((current) => {
+      const nextOrders = current.orders.map((order) => (order.id === next.id ? next : order));
+      persistRows(PRODUCTS_KEY, nextProducts);
+      persistRows(ORDERS_KEY, nextOrders);
+      return { products: nextProducts, orders: nextOrders, error: null };
+    });
+    return next;
+  },
 }));

@@ -12,7 +12,7 @@ const orderItems = (order: Order) =>
     : [{ name: order.products, qty: order.qty, unitPrice: order.unitPrice || order.total / Math.max(1, order.qty) }];
 
 export const ProductsPage: React.FC = () => {
-  const { products, orders, error, hydrate: hydrateSales, addProduct, updateProduct, removeProduct, addOrder, updateOrder, adjustInventoryForEdit } = useProductSales();
+  const { products, orders, error, hydrate: hydrateSales, addProduct, updateProduct, removeProduct, addOrder, updateOrder, updateOrderWithInventory } = useProductSales();
   const { hydrate: hydratePayments, addPayment } = usePayments();
   const { user } = useAuth();
   const canManageProducts = user?.role === 'admin' || user?.role === 'fdo';
@@ -65,10 +65,13 @@ export const ProductsPage: React.FC = () => {
 
   const resetProductForm = () => setProductForm({ editingId: '', name: '', price: '', stock: '', sold: '', notify: false });
 
-  const saveProduct = () => {
+  const saveProduct = async () => {
     if (isReadOnly || !productForm.name.trim() || !productForm.price || !productForm.stock) return;
     const payload = { name: productForm.name.trim(), price: Number(productForm.price), stock: Number(productForm.stock), sold: Number(productForm.sold) || 0, notify: productForm.notify };
-    productForm.editingId ? updateProduct(productForm.editingId, payload) : addProduct(payload);
+    const saved = productForm.editingId
+      ? await updateProduct(productForm.editingId, payload)
+      : await addProduct(payload);
+    if (!saved) return;
     resetProductForm();
   };
 
@@ -77,12 +80,12 @@ export const ProductsPage: React.FC = () => {
     setProductForm({ editingId: product.id, name: product.name, price: String(product.price), stock: String(product.stock), sold: String(product.sold), notify: product.notify });
   };
 
-  const deleteProduct = (product: ProductRow) => {
+  const deleteProduct = async (product: ProductRow) => {
     if (isReadOnly || !window.confirm(`Delete ${product.name}?`)) return;
-    removeProduct(product.id);
+    await removeProduct(product.id);
   };
 
-  const createSale = () => {
+  const createSale = async () => {
     if (isReadOnly || !saleForm.patient.trim()) { setSaleError('Please enter patient name.'); return; }
     const cleanItems = saleItems.map((item) => ({ productName: item.productName, qty: Math.floor(item.qty) })).filter((item) => item.productName && item.qty > 0);
     if (!cleanItems.length) { setSaleError('Please add at least one product.'); return; }
@@ -94,9 +97,9 @@ export const ProductsPage: React.FC = () => {
       });
       const total = items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
       const paid = Number(saleForm.paid) || 0;
-      const created = addOrder({ patient: saleForm.patient.trim(), patientId: saleForm.patientId.trim() || undefined, items, location: saleForm.location, paid, method: saleForm.method });
+      const created = await addOrder({ patient: saleForm.patient.trim(), patientId: saleForm.patientId.trim() || undefined, items, location: saleForm.location, paid, method: saleForm.method });
       if (!created) throw new Error('Unable to create sale.');
-      addPayment({ date: new Date().toISOString().slice(0, 16).replace('T', ' '), patientId: saleForm.patientId.trim() || 'N/A', patientName: saleForm.patient.trim(), method: saleForm.method, amount: total, notes: items.map((item) => `${item.name} x${item.qty}`).join(', '), cash: saleForm.method === 'CASH' ? paid : 0, card: saleForm.method === 'CARD' ? paid : 0, bank: saleForm.method === 'BANK_TRANSFER' ? paid : 0, other: saleForm.method === 'OTHER' ? paid : 0, source: `Product Sale - ${created.products} (${created.id})` });
+      await addPayment({ date: new Date().toISOString().slice(0, 16).replace('T', ' '), patientId: saleForm.patientId.trim() || 'N/A', patientName: saleForm.patient.trim(), method: saleForm.method, amount: total, notes: items.map((item) => `${item.name} x${item.qty}`).join(', '), cash: saleForm.method === 'CASH' ? paid : 0, card: saleForm.method === 'CARD' ? paid : 0, bank: saleForm.method === 'BANK_TRANSFER' ? paid : 0, other: saleForm.method === 'OTHER' ? paid : 0, source: `Product Sale - ${created.products} (${created.id})` });
       setSaleForm({ patient: '', patientId: '', location: 'Main Branch', paid: '', method: 'CASH' });
       setSaleItems([{ productName: '', qty: 1 }]);
       setSaleOpen(false);
@@ -112,14 +115,15 @@ export const ProductsPage: React.FC = () => {
     setEditForm({ paid: String(order.paid ?? 0), status: order.status, method: order.method, productName: order.items?.length === 1 ? order.items[0].name : order.products.split(' x')[0], qty: order.items?.length === 1 ? order.items[0].qty : order.qty, location: order.location });
   };
 
-  const saveOrderUpdate = () => {
+  const saveOrderUpdate = async () => {
     if (isReadOnly || !editingOrder) return;
     const paid = Number(editForm.paid) || 0;
     const deltaPaid = Math.max(0, paid - editingOrder.paid);
     if (editingOrder.items && editingOrder.items.length > 1) {
       const statusValue = editForm.status === 'Cancelled' ? 'Cancelled' : paid >= editingOrder.total ? 'Paid' : paid > 0 ? 'Partial' : 'Pending';
-      updateOrder(editingOrder.id, { paid, method: editForm.method, status: statusValue, location: editForm.location });
-      if (deltaPaid > 0) addPayment({ date: new Date().toISOString().slice(0, 16).replace('T', ' '), patientId: editingOrder.patientId || 'N/A', patientName: editingOrder.patient, method: editForm.method, amount: deltaPaid, notes: editingOrder.products, cash: editForm.method === 'CASH' ? deltaPaid : 0, card: editForm.method === 'CARD' ? deltaPaid : 0, bank: editForm.method === 'BANK_TRANSFER' ? deltaPaid : 0, other: editForm.method === 'OTHER' ? deltaPaid : 0, source: `Product Balance - ${editingOrder.products} (${editingOrder.id})` });
+      const updated = await updateOrder(editingOrder.id, { paid, method: editForm.method, status: statusValue, location: editForm.location });
+      if (!updated) return;
+      if (deltaPaid > 0) await addPayment({ date: new Date().toISOString().slice(0, 16).replace('T', ' '), patientId: editingOrder.patientId || 'N/A', patientName: editingOrder.patient, method: editForm.method, amount: deltaPaid, notes: editingOrder.products, cash: editForm.method === 'CASH' ? deltaPaid : 0, card: editForm.method === 'CARD' ? deltaPaid : 0, bank: editForm.method === 'BANK_TRANSFER' ? deltaPaid : 0, other: editForm.method === 'OTHER' ? deltaPaid : 0, source: `Product Balance - ${editingOrder.products} (${editingOrder.id})` });
       setEditingOrder(null);
       return;
     }
@@ -132,9 +136,9 @@ export const ProductsPage: React.FC = () => {
     const total = product.price * editForm.qty;
     const statusValue = editForm.status === 'Cancelled' ? 'Cancelled' : paid >= total ? 'Paid' : paid > 0 ? 'Partial' : 'Pending';
     const nextOrder: Order = { ...editingOrder, products: `${product.name} x${editForm.qty}`, qty: editForm.qty, unitPrice: product.price, location: editForm.location, total, paid, method: editForm.method, status: statusValue, items: [{ name: product.name, qty: editForm.qty, unitPrice: product.price }] };
-    adjustInventoryForEdit(editingOrder, nextOrder);
-    updateOrder(editingOrder.id, nextOrder);
-    if (deltaPaid > 0) addPayment({ date: new Date().toISOString().slice(0, 16).replace('T', ' '), patientId: editingOrder.patientId || 'N/A', patientName: editingOrder.patient, method: editForm.method, amount: deltaPaid, notes: nextOrder.products, cash: editForm.method === 'CASH' ? deltaPaid : 0, card: editForm.method === 'CARD' ? deltaPaid : 0, bank: editForm.method === 'BANK_TRANSFER' ? deltaPaid : 0, other: editForm.method === 'OTHER' ? deltaPaid : 0, source: `Product Balance - ${nextOrder.products} (${editingOrder.id})` });
+    const updated = await updateOrderWithInventory(editingOrder, nextOrder);
+    if (!updated) return;
+    if (deltaPaid > 0) await addPayment({ date: new Date().toISOString().slice(0, 16).replace('T', ' '), patientId: editingOrder.patientId || 'N/A', patientName: editingOrder.patient, method: editForm.method, amount: deltaPaid, notes: nextOrder.products, cash: editForm.method === 'CASH' ? deltaPaid : 0, card: editForm.method === 'CARD' ? deltaPaid : 0, bank: editForm.method === 'BANK_TRANSFER' ? deltaPaid : 0, other: editForm.method === 'OTHER' ? deltaPaid : 0, source: `Product Balance - ${nextOrder.products} (${editingOrder.id})` });
     setEditingOrder(null);
   };
 
@@ -174,7 +178,7 @@ export const ProductsPage: React.FC = () => {
         </div>
         {error && <div className="muted small" style={{ marginTop: 10 }}>{error}</div>}
         <div className="table-wrapper"><table className="table table--compact"><thead><tr><th>Product</th><th>Price</th><th>Remaining Stock</th><th>Lifetime Sold</th><th>Alert Status</th><th>Stock Level</th><th>Actions</th></tr></thead><tbody>
-          {products.map((product) => <tr key={product.id}><td>{product.name}</td><td>PKR {product.price.toLocaleString()}</td><td>{product.stock}</td><td>{product.sold}</td><td><div className="action-stack"><StatusBadge status={product.notify ? 'Active' : 'Inactive'} /><button className="icon-btn" type="button" onClick={() => updateProduct(product.id, { notify: !product.notify })} disabled={isReadOnly} aria-label={product.notify ? 'Disable alert' : 'Enable alert'} title={product.notify ? 'Disable alert' : 'Enable alert'}><PowerIcon /></button></div></td><td>{product.stock < 15 ? <StatusBadge status="Inactive" /> : <StatusBadge status="Active" />}</td><td><div className="action-stack"><button className="icon-btn" type="button" onClick={() => editProduct(product)} disabled={isReadOnly} aria-label="Edit" title="Edit"><EditIcon /></button><button className="icon-btn" type="button" onClick={() => deleteProduct(product)} disabled={isReadOnly} aria-label="Delete" title="Delete"><TrashIcon /></button></div></td></tr>)}
+          {products.map((product) => <tr key={product.id}><td>{product.name}</td><td>PKR {product.price.toLocaleString()}</td><td>{product.stock}</td><td>{product.sold}</td><td><div className="action-stack"><StatusBadge status={product.notify ? 'Active' : 'Inactive'} /><button className="icon-btn" type="button" onClick={() => void updateProduct(product.id, { notify: !product.notify })} disabled={isReadOnly} aria-label={product.notify ? 'Disable alert' : 'Enable alert'} title={product.notify ? 'Disable alert' : 'Enable alert'}><PowerIcon /></button></div></td><td>{product.stock < 15 ? <StatusBadge status="Inactive" /> : <StatusBadge status="Active" />}</td><td><div className="action-stack"><button className="icon-btn" type="button" onClick={() => editProduct(product)} disabled={isReadOnly} aria-label="Edit" title="Edit"><EditIcon /></button><button className="icon-btn" type="button" onClick={() => void deleteProduct(product)} disabled={isReadOnly} aria-label="Delete" title="Delete"><TrashIcon /></button></div></td></tr>)}
         </tbody></table></div>
       </div>
 

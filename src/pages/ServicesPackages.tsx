@@ -143,17 +143,18 @@ export const ServicesPackagesPage: React.FC = () => {
     await updatePackage(pkg.id, { active: !pkg.active });
   };
 
-  const handleAssign = () => {
+  const handleAssign = async () => {
     if (isReadOnly) return;
     if (!selectedPackage || !selectedAppointmentId) return;
     const selected = patientOptions.find((p) => p.id === selectedAppointmentId);
     if (!selected) return;
-    addAssignment({
+    const created = await addAssignment({
       packageName: selectedPackage,
       patientName: selected.name,
       phone: selected.phone,
       appointmentId: selectedAppointmentId,
     });
+    if (!created) return;
     setSelectedPackage(null);
     setSelectedAppointmentId('');
     setSearch('');

@@ -117,9 +117,9 @@ export const PatientsPage: React.FC = () => {
     });
   }, [selectedHistory]);
 
-  const handleCancel = (id: string) => {
+  const handleCancel = async (id: string) => {
     if (isReadOnly) return;
-    updateStatus(id, 'Cancelled');
+    await updateStatus(id, 'Cancelled');
   };
 
   const handleMessage = (row: Appointment) => {

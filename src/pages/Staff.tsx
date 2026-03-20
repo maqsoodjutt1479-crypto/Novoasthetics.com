@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StatusBadge } from '../components/StatusBadge';
-import { useStaff, type StaffRole, type StaffMember } from '../store/useStaff';
+import { useStaff, type StaffRole } from '../store/useStaff';
 import { hashPassword } from '../utils/password';
 import { useAuth } from '../components/AuthProvider';
-import { FilterXIcon, PowerIcon, TrashIcon } from '../components/UiIcons';
+import { FilterXIcon, TrashIcon } from '../components/UiIcons';
 
 export const StaffPage: React.FC = () => {
-  const { staff, hydrate, addStaff, updateStatus, removeStaff } = useStaff();
+  const { staff, error, hydrate, addStaff, removeStaff } = useStaff();
   const { user } = useAuth();
   const canManageStaff = user?.role === 'admin' || user?.role === 'fdo';
   const isReadOnly = !canManageStaff;
@@ -21,7 +20,6 @@ export const StaffPage: React.FC = () => {
     confirmPassword: '',
     specialty: '',
     branch: 'Main',
-    status: 'Active' as StaffMember['status'],
   });
   const [formError, setFormError] = useState('');
 
@@ -59,16 +57,17 @@ export const StaffPage: React.FC = () => {
       return;
     }
     const passwordHash = await hashPassword(form.password);
-    addStaff({
+    const created = await addStaff({
       name: form.name,
       role: form.role,
       phone: form.phone,
       email: form.email,
       specialty: form.specialty || undefined,
       branch: form.branch || undefined,
-      status: form.status,
+      status: 'Active',
       passwordHash,
     });
+    if (!created) return;
     setForm({
       name: '',
       role: 'Doctor',
@@ -78,20 +77,12 @@ export const StaffPage: React.FC = () => {
       confirmPassword: '',
       specialty: '',
       branch: 'Main',
-      status: 'Active',
     });
   };
 
-  const toggleStatus = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (isReadOnly) return;
-    const current = staff.find((s) => s.id === id);
-    if (!current) return;
-    updateStatus(id, current.status === 'Active' ? 'Inactive' : 'Active');
-  };
-
-  const handleDelete = (id: string) => {
-    if (isReadOnly) return;
-    removeStaff(id);
+    await removeStaff(id);
   };
 
   return (
@@ -169,17 +160,9 @@ export const StaffPage: React.FC = () => {
             onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))}
             disabled={isReadOnly}
           />
-          <select
-            className="input"
-            value={form.status}
-            onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as StaffMember['status'] }))}
-            disabled={isReadOnly}
-          >
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
         </div>
         {formError && <div className="muted small" style={{ marginTop: 8, color: 'var(--color-error, #c00)' }}>{formError}</div>}
+        {error && <div className="muted small" style={{ marginTop: 8, color: 'var(--color-error, #c00)' }}>{error}</div>}
       </div>
 
       <div className="panel section">
@@ -219,7 +202,6 @@ export const StaffPage: React.FC = () => {
                 <th>Branch</th>
                 <th>Phone</th>
                 <th>Email</th>
-                <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -235,31 +217,8 @@ export const StaffPage: React.FC = () => {
                   <td className="muted small">{member.branch || '-'}</td>
                   <td className="muted small">{member.phone}</td>
                   <td className="muted small">{member.email}</td>
-                  <td>
-                    <div className="action-stack">
-                      <label className="toggle" title="Activate/Deactivate">
-                        <input
-                          type="checkbox"
-                          checked={member.status === 'Active'}
-                          onChange={() => toggleStatus(member.id)}
-                          disabled={isReadOnly}
-                        />
-                        <span className="toggle__slider" />
-                      </label>
-                      <StatusBadge status={member.status} />
-                    </div>
-                  </td>
                   <td className="actions-cell">
                     <div className="action-stack">
-                      <button
-                        className="icon-btn"
-                        onClick={() => toggleStatus(member.id)}
-                        disabled={isReadOnly}
-                        aria-label={member.status === 'Active' ? 'Deactivate' : 'Activate'}
-                        title={member.status === 'Active' ? 'Deactivate' : 'Activate'}
-                      >
-                        <PowerIcon />
-                      </button>
                       <button className="icon-btn" onClick={() => handleDelete(member.id)} disabled={isReadOnly} aria-label="Delete" title="Delete">
                         <TrashIcon />
                       </button>
@@ -269,7 +228,7 @@ export const StaffPage: React.FC = () => {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="muted small" style={{ textAlign: 'center' }}>
+                  <td colSpan={7} className="muted small" style={{ textAlign: 'center' }}>
                     No team members match this search.
                   </td>
                 </tr>

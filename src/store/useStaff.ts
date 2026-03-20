@@ -22,7 +22,7 @@ type StaffState = {
   isLoading: boolean;
   error: string | null;
   hydrate: () => Promise<void>;
-  addStaff: (member: Omit<StaffMember, 'id'>) => StaffMember;
+  addStaff: (member: Omit<StaffMember, 'id'>) => Promise<StaffMember | null>;
   registerStaffAccount: (member: {
     name: string;
     phone: string;
@@ -32,8 +32,8 @@ type StaffState = {
     specialty?: string;
     branch?: string;
   }) => Promise<{ member: StaffMember | null; error: string | null }>;
-  updateStatus: (id: string, status: StaffMember['status']) => void;
-  removeStaff: (id: string) => void;
+  updateStatus: (id: string, status: StaffMember['status']) => Promise<StaffMember | null>;
+  removeStaff: (id: string) => Promise<boolean>;
   /** Verify staff by email + password; returns member if valid, null otherwise */
   verifyStaffCredentials: (email: string, password: string) => Promise<StaffMember | null>;
 };
@@ -44,7 +44,7 @@ const initialStaff: StaffMember[] = [
   { id: 'D-001', name: 'Dr. Khan', role: 'Doctor', phone: '0300-1112233', email: 'dr.khan@clinic.pk', specialty: 'Hair Transplant', branch: 'Main', status: 'Active' },
   { id: 'D-002', name: 'Dr. Fatima', role: 'Doctor', phone: '0301-5556677', email: 'dr.fatima@clinic.pk', specialty: 'Laser & Aesthetics', branch: 'Main', status: 'Active' },
   { id: 'S-101', name: 'Ayesha', role: 'Reception', phone: '0333-2020202', email: 'ayesha@clinic.pk', specialty: 'Front Desk', branch: 'Main', status: 'Active' },
-  { id: 'S-102', name: 'Bilal', role: 'Technician', phone: '0321-9090909', email: 'bilal@clinic.pk', specialty: 'Laser Technician', branch: 'Clinic Store', status: 'Inactive' },
+  { id: 'S-102', name: 'Bilal', role: 'Technician', phone: '0321-9090909', email: 'bilal@clinic.pk', specialty: 'Laser Technician', branch: 'Clinic Store', status: 'Active' },
 ];
 
 const loadStaff = (): StaffMember[] => {
@@ -134,25 +134,41 @@ export const useStaff = create<StaffState>((set, get) => ({
     persistStaff(mapped);
     set({ staff: mapped, isLoading: false, error: null });
   },
-  addStaff: (member) => {
-    let created: StaffMember | null = null;
+  addStaff: async (member) => {
+    const email = member.email.trim().toLowerCase();
+    const duplicate = get().staff.find((row) => row.email.toLowerCase() === email);
+    if (duplicate) {
+      set({ error: 'This email is already registered.' });
+      return null;
+    }
+
+    const created: StaffMember = {
+      ...member,
+      id: createStaffId(member.role),
+      email,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.from('staff').insert(toRowPayload(created)).select('*').single();
+      if (error || !data) {
+        set({ error: error?.message ?? 'Failed to add staff member.' });
+        return null;
+      }
+      const saved = toModel(data as StaffRow);
+      set((state) => {
+        const next = [saved, ...state.staff];
+        persistStaff(next);
+        return { staff: next, error: null };
+      });
+      return saved;
+    }
+
     set((state) => {
-      created = {
-        ...member,
-        id: createStaffId(member.role),
-      };
       const next = [created, ...state.staff];
       persistStaff(next);
-      return { staff: next };
+      return { staff: next, error: null };
     });
-    if (created && isSupabaseConfigured && supabase) {
-      void supabase.from('staff').upsert(toRowPayload(created), { onConflict: 'id' }).then(({ error }) => {
-        if (error) {
-          set({ error: error.message });
-        }
-      });
-    }
-    return created!;
+    return created;
   },
   registerStaffAccount: async (member) => {
     const email = member.email.trim().toLowerCase();
@@ -189,32 +205,63 @@ export const useStaff = create<StaffState>((set, get) => ({
 
     return { member: created, error: null };
   },
-  updateStatus: (id, status) =>
-    set((state) => {
-      const next = state.staff.map((s) => (s.id === id ? { ...s, status } : s));
-      persistStaff(next);
-      if (isSupabaseConfigured && supabase) {
-        void supabase.from('staff').update({ status }).eq('id', id).then(({ error }) => {
-          if (error) {
-            set({ error: error.message });
-          }
-        });
+  updateStatus: async (id, status) => {
+    const current = get().staff.find((member) => member.id === id);
+    if (!current) {
+      set({ error: 'Staff member not found.' });
+      return null;
+    }
+
+    const updated = { ...current, status };
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('staff')
+        .update({ status })
+        .eq('id', id)
+        .select('*')
+        .single();
+      if (error || !data) {
+        set({ error: error?.message ?? 'Failed to update staff status.' });
+        return null;
       }
-      return { staff: next };
-    }),
-  removeStaff: (id) =>
+      const saved = toModel(data as StaffRow);
+      set((state) => {
+        const next = state.staff.map((member) => (member.id === id ? saved : member));
+        persistStaff(next);
+        return { staff: next, error: null };
+      });
+      return saved;
+    }
+
     set((state) => {
-      const next = state.staff.filter((s) => s.id !== id);
+      const next = state.staff.map((member) => (member.id === id ? updated : member));
       persistStaff(next);
-      if (isSupabaseConfigured && supabase) {
-        void supabase.from('staff').delete().eq('id', id).then(({ error }) => {
-          if (error) {
-            set({ error: error.message });
-          }
-        });
+      return { staff: next, error: null };
+    });
+    return updated;
+  },
+  removeStaff: async (id) => {
+    const current = get().staff.find((member) => member.id === id);
+    if (!current) {
+      set({ error: 'Staff member not found.' });
+      return false;
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.from('staff').delete().eq('id', id);
+      if (error) {
+        set({ error: error.message });
+        return false;
       }
-      return { staff: next };
-    }),
+    }
+
+    set((state) => {
+      const next = state.staff.filter((member) => member.id !== id);
+      persistStaff(next);
+      return { staff: next, error: null };
+    });
+    return true;
+  },
   verifyStaffCredentials: async (email, password) => {
     const hash = await hashPassword(password);
     if (isSupabaseConfigured && supabase) {

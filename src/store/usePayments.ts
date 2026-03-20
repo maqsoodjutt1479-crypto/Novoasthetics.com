@@ -24,8 +24,8 @@ type PaymentState = {
   isLoading: boolean;
   error: string | null;
   hydrate: () => Promise<void>;
-  addPayment: (payment: Omit<Payment, 'id'>) => void;
-  upsertPayment: (payment: Omit<Payment, 'id'>) => void;
+  addPayment: (payment: Omit<Payment, 'id'>) => Promise<Payment | null>;
+  upsertPayment: (payment: Omit<Payment, 'id'>) => Promise<Payment | null>;
 };
 
 const STORAGE_KEY = 'clinic-payments';
@@ -123,52 +123,74 @@ export const usePayments = create<PaymentState>((set, get) => ({
     persistPayments(mapped);
     set({ payments: mapped, isLoading: false, error: null });
   },
-  addPayment: (payment) =>
+  addPayment: async (payment) => {
+    const created: Payment = {
+      ...payment,
+      id: `PM-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('payments')
+        .upsert(toRowPayload(created), { onConflict: 'id' })
+        .select('*')
+        .single();
+      if (error || !data) {
+        set({ error: error?.message ?? 'Failed to save payment.' });
+        return null;
+      }
+      const saved = toModel(data as PaymentRow);
+      set((state) => {
+        const next = [saved, ...state.payments];
+        persistPayments(next);
+        return { payments: next, error: null };
+      });
+      return saved;
+    }
+
     set((state) => {
-      const created: Payment = {
-        ...payment,
-        id: `PM-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`,
-      };
       const next = [created, ...state.payments];
       persistPayments(next);
-      if (isSupabaseConfigured && supabase) {
-        void supabase.from('payments').upsert(toRowPayload(created), { onConflict: 'id' }).then(({ error }) => {
-          if (error) {
-            set({ error: error.message });
-          }
-        });
+      return { payments: next, error: null };
+    });
+    return created;
+  },
+  upsertPayment: async (payment) => {
+    const current = get().payments.find((row) => row.source === payment.source);
+    const nextPayment: Payment = current
+      ? { ...current, ...payment, id: current.id }
+      : { ...payment, id: `PM-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}` };
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('payments')
+        .upsert(toRowPayload(nextPayment), { onConflict: 'id' })
+        .select('*')
+        .single();
+      if (error || !data) {
+        set({ error: error?.message ?? 'Failed to save payment.' });
+        return null;
       }
-      return { payments: next };
-    }),
-  upsertPayment: (payment) =>
-    set((state) => {
-      const index = state.payments.findIndex((row) => row.source === payment.source);
-      if (index === -1) {
-        const created: Payment = {
-          ...payment,
-          id: `PM-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`,
-        };
-        const next = [created, ...state.payments];
+      const saved = toModel(data as PaymentRow);
+      set((state) => {
+        const exists = state.payments.some((row) => row.id === saved.id);
+        const next = exists
+          ? state.payments.map((row) => (row.id === saved.id ? saved : row))
+          : [saved, ...state.payments];
         persistPayments(next);
-        if (isSupabaseConfigured && supabase) {
-          void supabase.from('payments').upsert(toRowPayload(created), { onConflict: 'id' }).then(({ error }) => {
-            if (error) {
-              set({ error: error.message });
-            }
-          });
-        }
-        return { payments: next };
-      }
-      const next = state.payments.map((row, i) => (i === index ? { ...row, ...payment } : row));
+        return { payments: next, error: null };
+      });
+      return saved;
+    }
+
+    set((state) => {
+      const exists = state.payments.some((row) => row.id === nextPayment.id);
+      const next = exists
+        ? state.payments.map((row) => (row.id === nextPayment.id ? nextPayment : row))
+        : [nextPayment, ...state.payments];
       persistPayments(next);
-      const updated = next[index];
-      if (updated && isSupabaseConfigured && supabase) {
-        void supabase.from('payments').upsert(toRowPayload(updated), { onConflict: 'id' }).then(({ error }) => {
-          if (error) {
-            set({ error: error.message });
-          }
-        });
-      }
-      return { payments: next };
-    }),
+      return { payments: next, error: null };
+    });
+    return nextPayment;
+  },
 }));

@@ -29,9 +29,9 @@ type AppointmentState = {
   isLoading: boolean;
   error: string | null;
   hydrate: () => Promise<void>;
-  addAppointment: (appt: Omit<Appointment, 'id' | 'status' | 'createdAt'> & { status?: AppointmentStatus }) => Appointment;
-  updateStatus: (id: string, status: AppointmentStatus) => void;
-  updateAppointment: (id: string, changes: Partial<Appointment>) => void;
+  addAppointment: (appt: Omit<Appointment, 'id' | 'status' | 'createdAt'> & { status?: AppointmentStatus }) => Promise<Appointment | null>;
+  updateStatus: (id: string, status: AppointmentStatus) => Promise<Appointment | null>;
+  updateAppointment: (id: string, changes: Partial<Appointment>) => Promise<Appointment | null>;
 };
 
 const STORAGE_KEY = 'clinic-appointments';
@@ -118,7 +118,7 @@ const toRowPayload = (appointment: Appointment) => ({
   follow_up_for_id: appointment.followUpForId ?? null,
 });
 
-export const useAppointments = create<AppointmentState>((set) => ({
+export const useAppointments = create<AppointmentState>((set, get) => ({
   appointments: loadAppointments(),
   isLoading: false,
   error: null,
@@ -148,7 +148,7 @@ export const useAppointments = create<AppointmentState>((set) => ({
     persistAppointments(mapped);
     set({ appointments: mapped, isLoading: false, error: null });
   },
-  addAppointment: (appt) => {
+  addAppointment: async (appt) => {
     const id = `PT-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`;
     const createdAt = new Date().toISOString();
     const created: Appointment = {
@@ -162,56 +162,102 @@ export const useAppointments = create<AppointmentState>((set) => ({
       createdAt,
     };
 
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('appointments')
+        .upsert(toRowPayload(created), { onConflict: 'id' })
+        .select('*')
+        .single();
+      if (error || !data) {
+        set({ error: error?.message ?? 'Failed to save appointment.' });
+        return null;
+      }
+      const saved = toModel(data as AppointmentRow);
+      set((state) => {
+        const next = [saved, ...state.appointments];
+        persistAppointments(next);
+        return { appointments: next, error: null };
+      });
+      return saved;
+    }
+
     set((state) => {
       const next = [created, ...state.appointments];
       persistAppointments(next);
-      return { appointments: next };
+      return { appointments: next, error: null };
     });
-
-    if (isSupabaseConfigured && supabase) {
-      void supabase
-        .from('appointments')
-        .upsert(toRowPayload(created), { onConflict: 'id' })
-        .then(({ error }) => {
-          if (error) {
-            set({ error: error.message });
-          }
-        });
-    }
-
     return created;
   },
-  updateStatus: (id, status) =>
-    set((state) => {
-      const next = state.appointments.map((a) => (a.id === id ? { ...a, status } : a));
-      persistAppointments(next);
-      if (isSupabaseConfigured && supabase) {
-        void supabase.from('appointments').update({ status }).eq('id', id).then(({ error }) => {
-          if (error) {
-            set({ error: error.message });
-          }
-        });
+  updateStatus: async (id, status) => {
+    const current = get().appointments.find((appointment) => appointment.id === id);
+    if (!current) {
+      set({ error: 'Appointment not found.' });
+      return null;
+    }
+
+    const updated = { ...current, status };
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('appointments')
+        .upsert(toRowPayload(updated), { onConflict: 'id' })
+        .select('*')
+        .single();
+      if (error || !data) {
+        set({ error: error?.message ?? 'Failed to update appointment status.' });
+        return null;
       }
-      return { appointments: next };
-    }),
-  updateAppointment: (id, changes) =>
+      const saved = toModel(data as AppointmentRow);
+      set((state) => {
+        const next = state.appointments.map((appointment) => (appointment.id === id ? saved : appointment));
+        persistAppointments(next);
+        return { appointments: next, error: null };
+      });
+      return saved;
+    }
+
     set((state) => {
-      const next = state.appointments.map((a) => (a.id === id ? { ...a, ...changes } : a));
+      const next = state.appointments.map((appointment) =>
+        appointment.id === id ? updated : appointment
+      );
       persistAppointments(next);
-      if (isSupabaseConfigured && supabase) {
-        const current = next.find((a) => a.id === id);
-        if (current) {
-          const payload = toRowPayload(current);
-          void supabase
-            .from('appointments')
-            .upsert(payload, { onConflict: 'id' })
-            .then(({ error }) => {
-              if (error) {
-                set({ error: error.message });
-              }
-            });
-        }
+      return { appointments: next, error: null };
+    });
+    return updated;
+  },
+  updateAppointment: async (id, changes) => {
+    const current = get().appointments.find((appointment) => appointment.id === id);
+    if (!current) {
+      set({ error: 'Appointment not found.' });
+      return null;
+    }
+
+    const updated = { ...current, ...changes, id };
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('appointments')
+        .upsert(toRowPayload(updated), { onConflict: 'id' })
+        .select('*')
+        .single();
+      if (error || !data) {
+        set({ error: error?.message ?? 'Failed to update appointment.' });
+        return null;
       }
-      return { appointments: next };
-    }),
+      const saved = toModel(data as AppointmentRow);
+      set((state) => {
+        const next = state.appointments.map((appointment) => (appointment.id === id ? saved : appointment));
+        persistAppointments(next);
+        return { appointments: next, error: null };
+      });
+      return saved;
+    }
+
+    set((state) => {
+      const next = state.appointments.map((appointment) =>
+        appointment.id === id ? updated : appointment
+      );
+      persistAppointments(next);
+      return { appointments: next, error: null };
+    });
+    return updated;
+  },
 }));

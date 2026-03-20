@@ -41,7 +41,7 @@ const getWeekKey = (date: Date) => {
 };
 
 export const PaymentsPage: React.FC = () => {
-  const { payments, hydrate, addPayment } = usePayments();
+  const { payments, error, hydrate, addPayment } = usePayments();
   const { user } = useAuth();
   const canManagePayments = user?.role === 'admin' || user?.role === 'fdo';
   const isReadOnly = !canManagePayments;
@@ -170,7 +170,7 @@ export const PaymentsPage: React.FC = () => {
       .map(([, value]) => value);
   }, [filtered, historyView]);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (isReadOnly) return;
     if (!form.patientName.trim()) return;
     const amount = Number(form.amount) || 0;
@@ -178,7 +178,7 @@ export const PaymentsPage: React.FC = () => {
     const card = Number(form.card) || 0;
     const bank = Number(form.bank) || 0;
     const other = Number(form.other) || 0;
-    addPayment({
+    const created = await addPayment({
       date: normalizeDate(form.date || new Date().toISOString().slice(0, 16)),
       patientId: form.patientId.trim() || 'N/A',
       patientName: form.patientName.trim(),
@@ -192,6 +192,7 @@ export const PaymentsPage: React.FC = () => {
       other,
       source: form.source.trim() || 'Manual Entry',
     });
+    if (!created) return;
     setForm({
       date: new Date().toISOString().slice(0, 16),
       patientId: '',
@@ -372,6 +373,7 @@ export const PaymentsPage: React.FC = () => {
             <FilterXIcon />
           </button>
         </div>
+        {error && <div className="muted small" style={{ marginTop: 10, color: '#b91c1c' }}>{error}</div>}
       </div>
 
       <div className="panel section">

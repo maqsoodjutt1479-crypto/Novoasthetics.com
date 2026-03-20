@@ -15,7 +15,7 @@ type PackageAssignmentState = {
   isLoading: boolean;
   error: string | null;
   hydrate: () => Promise<void>;
-  addAssignment: (payload: Omit<PackageAssignment, 'id' | 'assignedAt'>) => PackageAssignment;
+  addAssignment: (payload: Omit<PackageAssignment, 'id' | 'assignedAt'>) => Promise<PackageAssignment | null>;
   renamePackageName: (previousName: string, nextName: string) => Promise<void>;
 };
 
@@ -70,7 +70,7 @@ const toRowPayload = (assignment: PackageAssignment) => ({
   assigned_at: assignment.assignedAt,
 });
 
-export const usePackageAssignments = create<PackageAssignmentState>((set) => ({
+export const usePackageAssignments = create<PackageAssignmentState>((set, get) => ({
   assignments: loadAssignments(),
   isLoading: false,
   error: null,
@@ -96,43 +96,43 @@ export const usePackageAssignments = create<PackageAssignmentState>((set) => ({
     persistAssignments(mapped);
     set({ assignments: mapped, isLoading: false, error: null });
   },
-  addAssignment: (payload) => {
-    let created: PackageAssignment | null = null;
+  addAssignment: async (payload) => {
+    const created: PackageAssignment = {
+      ...payload,
+      id: `PKG-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`,
+      assignedAt: new Date().toISOString(),
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('package_assignments')
+        .upsert(toRowPayload(created), { onConflict: 'id' })
+        .select('*')
+        .single();
+      if (error || !data) {
+        set({ error: error?.message ?? 'Failed to assign package.' });
+        return null;
+      }
+      const saved = toModel(data as PackageAssignmentRow);
+      set((state) => {
+        const next = [saved, ...state.assignments];
+        persistAssignments(next);
+        return { assignments: next, error: null };
+      });
+      return saved;
+    }
+
     set((state) => {
-      created = {
-        ...payload,
-        id: `PKG-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`,
-        assignedAt: new Date().toISOString(),
-      };
       const next = [created, ...state.assignments];
       persistAssignments(next);
-      if (isSupabaseConfigured && supabase) {
-        void supabase
-          .from('package_assignments')
-          .upsert(toRowPayload(created), { onConflict: 'id' })
-          .then(({ error }) => {
-            if (error) {
-              set({ error: error.message });
-            }
-          });
-      }
-      return { assignments: next };
+      return { assignments: next, error: null };
     });
-    return created!;
+    return created;
   },
   renamePackageName: async (previousName, nextName) => {
     const trimmedPrevious = previousName.trim();
     const trimmedNext = nextName.trim();
     if (!trimmedPrevious || !trimmedNext || trimmedPrevious === trimmedNext) return;
-
-    const state = usePackageAssignments.getState();
-    const nextRows = state.assignments.map((assignment) =>
-      assignment.packageName === trimmedPrevious
-        ? { ...assignment, packageName: trimmedNext }
-        : assignment
-    );
-    persistAssignments(nextRows);
-    set({ assignments: nextRows, error: null });
 
     if (isSupabaseConfigured && supabase) {
       const { error } = await supabase
@@ -141,7 +141,16 @@ export const usePackageAssignments = create<PackageAssignmentState>((set) => ({
         .eq('package_name', trimmedPrevious);
       if (error) {
         set({ error: error.message });
+        return;
       }
     }
+
+    const nextRows = get().assignments.map((assignment) =>
+      assignment.packageName === trimmedPrevious
+        ? { ...assignment, packageName: trimmedNext }
+        : assignment
+    );
+    persistAssignments(nextRows);
+    set({ assignments: nextRows, error: null });
   },
 }));

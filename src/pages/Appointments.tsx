@@ -25,10 +25,10 @@ const fallbackDoctors = ['Dr. Khan', 'Dr. Fatima', 'Dr. Ali'];
 const workingSlots = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'];
 
 export const AppointmentsPage: React.FC = () => {
-  const { appointments, hydrate: hydrateAppointments, addAppointment, updateStatus, updateAppointment } = useAppointments();
-  const { upsertPayment } = usePayments();
+  const { appointments, error: appointmentsError, hydrate: hydrateAppointments, addAppointment, updateStatus, updateAppointment } = useAppointments();
+  const { error: paymentsError, upsertPayment } = usePayments();
   const { addFromAppointment, markByAppointment } = useNotifications();
-  const { addAssignment } = usePackageAssignments();
+  const { error: assignmentError, addAssignment } = usePackageAssignments();
   const { packages, hydrate: hydratePackages } = usePackages();
   const { services, hydrate: hydrateServices } = useClinicalServices();
   const { staff, hydrate: hydrateStaff } = useStaff();
@@ -253,18 +253,20 @@ export const AppointmentsPage: React.FC = () => {
     return { entries, max };
   }, [filtered]);
 
-  const handleStatusChange = (id: string, next: AppointmentStatus) => {
+  const handleStatusChange = async (id: string, next: AppointmentStatus) => {
     if (!canUpdateStatus) return;
-    updateStatus(id, next);
-    if (next === 'Confirmed') {
+    const updated = await updateStatus(id, next);
+    if (updated && next === 'Confirmed') {
       markByAppointment(id);
     }
   };
 
-  const handleCancel = (id: string) => {
+  const handleCancel = async (id: string) => {
     if (!canCancel) return;
-    updateStatus(id, 'Cancelled');
-    markByAppointment(id);
+    const updated = await updateStatus(id, 'Cancelled');
+    if (updated) {
+      markByAppointment(id);
+    }
   };
 
   const handleMessage = (row: Appointment) => {
@@ -315,15 +317,16 @@ export const AppointmentsPage: React.FC = () => {
     setSelectedPackage('');
   };
 
-  const handleConfirmAssign = () => {
+  const handleConfirmAssign = async () => {
     if (isReadOnly) return;
     if (!assigning || !selectedPackage) return;
-    addAssignment({
+    const created = await addAssignment({
       packageName: selectedPackage,
       patientName: assigning.patient,
       phone: assigning.phone,
       appointmentId: assigning.id,
     });
+    if (!created) return;
     setAssigning(null);
     setSelectedPackage('');
   };
@@ -372,7 +375,7 @@ export const AppointmentsPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (isReadOnly) return;
     if (!form.patient || !form.phone || !form.datetime) return;
     if (treatments.length === 0) {
@@ -407,37 +410,37 @@ export const AppointmentsPage: React.FC = () => {
       paymentMethod: showFinancial ? form.paymentMethod : 'CASH',
     };
     if (editingId) {
-      updateAppointment(editingId, payload);
+      const updated = await updateAppointment(editingId, payload);
+      if (!updated) return;
       setEditingId(null);
     } else {
-      const created = addAppointment(payload);
+      const created = await addAppointment(payload);
+      if (!created) return;
       addFromAppointment(created);
-      {
-        const status = created.paymentStatus;
-        const paidAmount =
-          status === 'Paid'
-            ? created.amount
-            : status === 'Partial'
-            ? Math.round(created.amount * 0.5)
-            : 0;
-        const method = created.paymentMethod ?? 'CASH';
-        upsertPayment({
-          date: created.datetime,
-          patientId: created.patientId || created.patient,
-          patientName: created.patient,
-          method,
-          amount: created.amount,
-          discount: created.discount,
-          notes: created.notes,
-          cash: method === 'CASH' ? paidAmount : 0,
-          card: method === 'CARD' ? paidAmount : 0,
-          bank: method === 'BANK_TRANSFER' ? paidAmount : 0,
-          other: method === 'OTHER' ? paidAmount : 0,
-          source: `Appointment - ${created.service} (${created.id})`,
-        });
-      }
+      const status = created.paymentStatus;
+      const paidAmount =
+        status === 'Paid'
+          ? created.amount
+          : status === 'Partial'
+          ? Math.round(created.amount * 0.5)
+          : 0;
+      const method = created.paymentMethod ?? 'CASH';
+      await upsertPayment({
+        date: created.datetime,
+        patientId: created.patientId || created.patient,
+        patientName: created.patient,
+        method,
+        amount: created.amount,
+        discount: created.discount,
+        notes: created.notes,
+        cash: method === 'CASH' ? paidAmount : 0,
+        card: method === 'CARD' ? paidAmount : 0,
+        bank: method === 'BANK_TRANSFER' ? paidAmount : 0,
+        other: method === 'OTHER' ? paidAmount : 0,
+        source: `Appointment - ${created.service} (${created.id})`,
+      });
       if (form.scheduleNext && form.nextDatetime) {
-        const followUp = addAppointment({
+        const followUp = await addAppointment({
           ...payload,
           datetime: form.nextDatetime,
           apptType: 'Follow-up',
@@ -446,7 +449,9 @@ export const AppointmentsPage: React.FC = () => {
           notes: `Follow-up for ${created.id}`,
           followUpForId: created.id,
         });
-        addFromAppointment(followUp);
+        if (followUp) {
+          addFromAppointment(followUp);
+        }
       }
     }
     setForm({
@@ -519,6 +524,11 @@ export const AppointmentsPage: React.FC = () => {
             {editingId ? 'Update Appointment' : <><PlusIcon /> Add Appointment</>}
           </button>
         </div>
+        {(appointmentsError || paymentsError || assignmentError) && (
+          <div className="muted small" style={{ marginTop: 10, color: '#b91c1c' }}>
+            {appointmentsError || paymentsError || assignmentError}
+          </div>
+        )}
         <div className="form-grid">
           <input
             className="input"
