@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { SidebarWithStyles } from '../components/Sidebar';
+import { SupabaseSync } from '../components/SupabaseSync';
 import { TopBarWithStyles } from '../components/TopBar';
 import { useAppointments } from '../store/useAppointments';
 import { useNotifications } from '../store/useNotifications';
@@ -31,6 +32,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ title, children }) => {
 
   return (
     <div className="app-shell" data-mobile-open={mobileNavOpen}>
+      <SupabaseSync />
       <SidebarWithStyles isMobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       {mobileNavOpen && (
         <button

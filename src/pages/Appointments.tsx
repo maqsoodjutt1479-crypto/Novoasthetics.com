@@ -37,8 +37,9 @@ export const AppointmentsPage: React.FC = () => {
   const role = user?.role || 'admin';
   const doctorName = user?.doctorName;
   const doctorNameNormalized = doctorName?.trim().toLowerCase();
-  const isReadOnly = role === 'fdo';
-  const showFinancial = role === 'admin' || role === 'fdo';
+  const canCreateAppointment = role === 'admin' || role === 'doctor' || role === 'fdo';
+  const isReadOnly = !canCreateAppointment;
+  const showFinancial = role === 'admin';
   const canPrint = role === 'admin' || role === 'fdo';
   const canEdit = role === 'admin';
   const canUpdateStatus = role === 'admin';

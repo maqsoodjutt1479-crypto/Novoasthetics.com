@@ -113,6 +113,61 @@ create table if not exists public.package_assignments (
 
 create index if not exists idx_package_assignments_assigned_at on public.package_assignments (assigned_at);
 
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'staff'
+    ) then
+      execute 'alter publication supabase_realtime add table public.staff';
+    end if;
+
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'appointments'
+    ) then
+      execute 'alter publication supabase_realtime add table public.appointments';
+    end if;
+
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'clinical_services'
+    ) then
+      execute 'alter publication supabase_realtime add table public.clinical_services';
+    end if;
+
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'payments'
+    ) then
+      execute 'alter publication supabase_realtime add table public.payments';
+    end if;
+
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'products'
+    ) then
+      execute 'alter publication supabase_realtime add table public.products';
+    end if;
+
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'product_orders'
+    ) then
+      execute 'alter publication supabase_realtime add table public.product_orders';
+    end if;
+
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'package_assignments'
+    ) then
+      execute 'alter publication supabase_realtime add table public.package_assignments';
+    end if;
+  end if;
+end
+$$;
+
 alter table public.staff enable row level security;
 alter table public.appointments enable row level security;
 alter table public.clinical_services enable row level security;

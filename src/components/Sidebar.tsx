@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAuth } from './AuthProvider';
+import { adminOnlyNavLabels } from './RoleAccess';
 import logo from '../assets/novo-logo.svg';
 import { ChevronDownIcon, ChevronRightIcon, XIcon } from './UiIcons';
 
@@ -44,7 +45,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onClose }) => {
   const role = user?.role || 'admin';
 
   const filteredNavItems = useMemo(() => {
-    if (role === 'admin' || role === 'fdo') return navItems;
+    if (role === 'admin') return navItems;
+    if (role === 'fdo') {
+      return navItems.filter((item) => !adminOnlyNavLabels.has(item.label));
+    }
     // Doctor view: only appointments
     return navItems.filter((item) => item.label === 'Appointments');
   }, [role]);
