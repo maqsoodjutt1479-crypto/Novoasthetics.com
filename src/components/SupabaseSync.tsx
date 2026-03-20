@@ -21,6 +21,17 @@ export const SupabaseSync: React.FC = () => {
     if (!isSupabaseConfigured || !supabase) return;
 
     const pending = new Map<string, number>();
+    const runFullSync = async () => {
+      await Promise.all([
+        hydrateAppointments(),
+        hydratePayments(),
+        hydrateStaff(),
+        hydrateServices(),
+        hydratePackages(),
+        hydrateAssignments(),
+        hydrateSales(),
+      ]);
+    };
     const scheduleHydrate = (key: string, hydrate: () => Promise<void>) => {
       const current = pending.get(key);
       if (current) {
@@ -32,6 +43,13 @@ export const SupabaseSync: React.FC = () => {
       }, 200);
       pending.set(key, timeout);
     };
+    const handleVisibilitySync = () => {
+      if (document.visibilityState === 'visible') {
+        void runFullSync();
+      }
+    };
+
+    void runFullSync();
 
     const channel = supabase
       .channel('nova-live-sync')
@@ -59,10 +77,25 @@ export const SupabaseSync: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'product_orders' }, () => {
         scheduleHydrate('product_sales', hydrateSales);
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          scheduleHydrate('full_sync', runFullSync);
+        }
+      });
+
+    const interval = window.setInterval(() => {
+      void runFullSync();
+    }, 15000);
+    window.addEventListener('focus', handleVisibilitySync);
+    window.addEventListener('online', handleVisibilitySync);
+    document.addEventListener('visibilitychange', handleVisibilitySync);
 
     return () => {
       pending.forEach((timeout) => window.clearTimeout(timeout));
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleVisibilitySync);
+      window.removeEventListener('online', handleVisibilitySync);
+      document.removeEventListener('visibilitychange', handleVisibilitySync);
       void supabase.removeChannel(channel);
     };
   }, [
