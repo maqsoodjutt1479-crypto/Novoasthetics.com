@@ -23,6 +23,15 @@ type StaffState = {
   error: string | null;
   hydrate: () => Promise<void>;
   addStaff: (member: Omit<StaffMember, 'id'>) => StaffMember;
+  registerStaffAccount: (member: {
+    name: string;
+    phone: string;
+    email: string;
+    password: string;
+    role: Extract<StaffRole, 'Doctor' | 'FDO'>;
+    specialty?: string;
+    branch?: string;
+  }) => Promise<{ member: StaffMember | null; error: string | null }>;
   updateStatus: (id: string, status: StaffMember['status']) => void;
   removeStaff: (id: string) => void;
   /** Verify staff by email + password; returns member if valid, null otherwise */
@@ -58,6 +67,11 @@ const persistStaff = (rows: StaffMember[]) => {
   } catch (err) {
     console.error('Failed to persist staff', err);
   }
+};
+
+const createStaffId = (role: StaffRole) => {
+  const prefix = role === 'Doctor' ? 'D' : 'S';
+  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
 };
 
 type StaffRow = {
@@ -96,7 +110,7 @@ const toRowPayload = (member: StaffMember) => ({
   password_hash: member.passwordHash ?? null,
 });
 
-export const useStaff = create<StaffState>((set) => ({
+export const useStaff = create<StaffState>((set, get) => ({
   staff: loadStaff(),
   isLoading: false,
   error: null,
@@ -123,10 +137,9 @@ export const useStaff = create<StaffState>((set) => ({
   addStaff: (member) => {
     let created: StaffMember | null = null;
     set((state) => {
-      const idPrefix = member.role === 'Doctor' ? 'D' : 'S';
       created = {
         ...member,
-        id: `${idPrefix}-${Math.floor(100 + Math.random() * 900)}`,
+        id: createStaffId(member.role),
       };
       const next = [created, ...state.staff];
       persistStaff(next);
@@ -140,6 +153,41 @@ export const useStaff = create<StaffState>((set) => ({
       });
     }
     return created!;
+  },
+  registerStaffAccount: async (member) => {
+    const email = member.email.trim().toLowerCase();
+    const duplicate = get().staff.find((row) => row.email.toLowerCase() === email);
+    if (duplicate) {
+      return { member: null, error: 'This email is already registered.' };
+    }
+
+    const passwordHash = await hashPassword(member.password);
+    const created: StaffMember = {
+      id: createStaffId(member.role),
+      name: member.name.trim(),
+      role: member.role,
+      phone: member.phone.trim(),
+      email,
+      specialty: member.specialty?.trim() || undefined,
+      branch: member.branch?.trim() || undefined,
+      status: 'Active',
+      passwordHash,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.from('staff').upsert(toRowPayload(created), { onConflict: 'id' });
+      if (error) {
+        return { member: null, error: error.message };
+      }
+    }
+
+    set((state) => {
+      const next = [created, ...state.staff];
+      persistStaff(next);
+      return { staff: next, error: null };
+    });
+
+    return { member: created, error: null };
   },
   updateStatus: (id, status) =>
     set((state) => {
