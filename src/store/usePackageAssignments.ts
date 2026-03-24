@@ -93,6 +93,19 @@ export const usePackageAssignments = create<PackageAssignmentState>((set, get) =
       return;
     }
     const mapped = (data as PackageAssignmentRow[]).map(toModel);
+    if (mapped.length === 0) {
+      const cached = loadAssignments();
+      if (cached.length > 0) {
+        const { error: seedError } = await supabase
+          .from('package_assignments')
+          .upsert(cached.map(toRowPayload), { onConflict: 'id' });
+        if (!seedError) {
+          persistAssignments(cached);
+          set({ assignments: cached, isLoading: false, error: null });
+          return;
+        }
+      }
+    }
     persistAssignments(mapped);
     set({ assignments: mapped, isLoading: false, error: null });
   },

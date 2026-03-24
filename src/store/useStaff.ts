@@ -23,6 +23,7 @@ type StaffState = {
   error: string | null;
   hydrate: () => Promise<void>;
   addStaff: (member: Omit<StaffMember, 'id'>) => Promise<StaffMember | null>;
+  updateStaff: (id: string, changes: Partial<Omit<StaffMember, 'id'>>) => Promise<StaffMember | null>;
   registerStaffAccount: (member: {
     name: string;
     phone: string;
@@ -131,6 +132,19 @@ export const useStaff = create<StaffState>((set, get) => ({
       return;
     }
     const mapped = (data as StaffRow[]).map(toModel);
+    if (mapped.length === 0) {
+      const cached = loadStaff();
+      if (cached.length > 0) {
+        const { error: seedError } = await supabase
+          .from('staff')
+          .upsert(cached.map(toRowPayload), { onConflict: 'id' });
+        if (!seedError) {
+          persistStaff(cached);
+          set({ staff: cached, isLoading: false, error: null });
+          return;
+        }
+      }
+    }
     persistStaff(mapped);
     set({ staff: mapped, isLoading: false, error: null });
   },
@@ -169,6 +183,57 @@ export const useStaff = create<StaffState>((set, get) => ({
       return { staff: next, error: null };
     });
     return created;
+  },
+  updateStaff: async (id, changes) => {
+    const current = get().staff.find((member) => member.id === id);
+    if (!current) {
+      set({ error: 'Staff member not found.' });
+      return null;
+    }
+
+    const nextEmail = changes.email?.trim().toLowerCase();
+    if (nextEmail) {
+      const duplicate = get().staff.find(
+        (member) => member.id !== id && member.email.toLowerCase() === nextEmail
+      );
+      if (duplicate) {
+        set({ error: 'This email is already registered.' });
+        return null;
+      }
+    }
+
+    const updated: StaffMember = {
+      ...current,
+      ...changes,
+      id,
+      email: nextEmail ?? current.email,
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('staff')
+        .upsert(toRowPayload(updated), { onConflict: 'id' })
+        .select('*')
+        .single();
+      if (error || !data) {
+        set({ error: error?.message ?? 'Failed to update staff member.' });
+        return null;
+      }
+      const saved = toModel(data as StaffRow);
+      set((state) => {
+        const next = state.staff.map((member) => (member.id === id ? saved : member));
+        persistStaff(next);
+        return { staff: next, error: null };
+      });
+      return saved;
+    }
+
+    set((state) => {
+      const next = state.staff.map((member) => (member.id === id ? updated : member));
+      persistStaff(next);
+      return { staff: next, error: null };
+    });
+    return updated;
   },
   registerStaffAccount: async (member) => {
     const email = member.email.trim().toLowerCase();

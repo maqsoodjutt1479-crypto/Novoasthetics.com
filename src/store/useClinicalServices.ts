@@ -62,6 +62,19 @@ export const useClinicalServices = create<ClinicalServicesState>((set, get) => (
       return;
     }
     const mapped = data as ClinicalService[];
+    if (mapped.length === 0) {
+      const cached = loadServices();
+      if (cached.length > 0) {
+        const { error: seedError } = await supabase
+          .from('clinical_services')
+          .upsert(cached, { onConflict: 'id' });
+        if (!seedError) {
+          persistServices(cached);
+          set({ services: cached, isLoading: false, error: null });
+          return;
+        }
+      }
+    }
     persistServices(mapped);
     set({ services: mapped, isLoading: false, error: null });
   },

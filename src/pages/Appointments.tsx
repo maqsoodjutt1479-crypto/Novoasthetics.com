@@ -9,7 +9,7 @@ import logo from '../assets/novo-logo.svg';
 import { useClinicalServices } from '../store/useClinicalServices';
 import { useStaff } from '../store/useStaff';
 import { usePayments } from '../store/usePayments';
-import { DownloadIcon, FilterXIcon, PlusIcon } from '../components/UiIcons';
+import { DownloadIcon, FilterXIcon, PlusIcon, TrashIcon } from '../components/UiIcons';
 
 const statusOptions: AppointmentStatus[] = [
   'Pending',
@@ -25,8 +25,16 @@ const fallbackDoctors = ['Dr. Khan', 'Dr. Fatima', 'Dr. Ali'];
 const workingSlots = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'];
 
 export const AppointmentsPage: React.FC = () => {
-  const { appointments, error: appointmentsError, hydrate: hydrateAppointments, addAppointment, updateStatus, updateAppointment } = useAppointments();
-  const { error: paymentsError, upsertPayment } = usePayments();
+  const {
+    appointments,
+    error: appointmentsError,
+    hydrate: hydrateAppointments,
+    addAppointment,
+    updateStatus,
+    updateAppointment,
+    removeAppointment,
+  } = useAppointments();
+  const { error: paymentsError, upsertPayment, removePaymentsByReferenceId } = usePayments();
   const { addFromAppointment, markByAppointment } = useNotifications();
   const { error: assignmentError, addAssignment } = usePackageAssignments();
   const { packages, hydrate: hydratePackages } = usePackages();
@@ -45,6 +53,7 @@ export const AppointmentsPage: React.FC = () => {
   const canEdit = role === 'admin';
   const canUpdateStatus = role === 'admin';
   const canCancel = role === 'admin';
+  const canDelete = role === 'admin';
   const canAssignPackage = role === 'admin';
   const [printAppointment, setPrintAppointment] = useState<Appointment | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -317,6 +326,31 @@ export const AppointmentsPage: React.FC = () => {
     setSelectedPackage('');
   };
 
+  const syncAppointmentPayment = async (appointment: Appointment) => {
+    const status = appointment.paymentStatus;
+    const paidAmount =
+      status === 'Paid'
+        ? appointment.amount
+        : status === 'Partial'
+        ? Math.round(appointment.amount * 0.5)
+        : 0;
+    const method = appointment.paymentMethod ?? 'CASH';
+    await upsertPayment({
+      date: appointment.datetime,
+      patientId: appointment.patientId || appointment.patient,
+      patientName: appointment.patient,
+      method,
+      amount: appointment.amount,
+      discount: appointment.discount,
+      notes: appointment.notes,
+      cash: method === 'CASH' ? paidAmount : 0,
+      card: method === 'CARD' ? paidAmount : 0,
+      bank: method === 'BANK_TRANSFER' ? paidAmount : 0,
+      other: method === 'OTHER' ? paidAmount : 0,
+      source: `Appointment - ${appointment.service} (${appointment.id})`,
+    });
+  };
+
   const handleConfirmAssign = async () => {
     if (isReadOnly) return;
     if (!assigning || !selectedPackage) return;
@@ -329,6 +363,15 @@ export const AppointmentsPage: React.FC = () => {
     if (!created) return;
     setAssigning(null);
     setSelectedPackage('');
+  };
+
+  const handleDelete = async (row: Appointment) => {
+    if (!canDelete) return;
+    if (!window.confirm(`Delete appointment ${row.id} for ${row.patient}?`)) return;
+    const removed = await removeAppointment(row.id);
+    if (!removed) return;
+    await removePaymentsByReferenceId(row.id);
+    markByAppointment(row.id);
   };
 
   const handleExport = () => {
@@ -412,33 +455,13 @@ export const AppointmentsPage: React.FC = () => {
     if (editingId) {
       const updated = await updateAppointment(editingId, payload);
       if (!updated) return;
+      await syncAppointmentPayment(updated);
       setEditingId(null);
     } else {
       const created = await addAppointment(payload);
       if (!created) return;
       addFromAppointment(created);
-      const status = created.paymentStatus;
-      const paidAmount =
-        status === 'Paid'
-          ? created.amount
-          : status === 'Partial'
-          ? Math.round(created.amount * 0.5)
-          : 0;
-      const method = created.paymentMethod ?? 'CASH';
-      await upsertPayment({
-        date: created.datetime,
-        patientId: created.patientId || created.patient,
-        patientName: created.patient,
-        method,
-        amount: created.amount,
-        discount: created.discount,
-        notes: created.notes,
-        cash: method === 'CASH' ? paidAmount : 0,
-        card: method === 'CARD' ? paidAmount : 0,
-        bank: method === 'BANK_TRANSFER' ? paidAmount : 0,
-        other: method === 'OTHER' ? paidAmount : 0,
-        source: `Appointment - ${created.service} (${created.id})`,
-      });
+      await syncAppointmentPayment(created);
       if (form.scheduleNext && form.nextDatetime) {
         const followUp = await addAppointment({
           ...payload,
@@ -986,6 +1009,11 @@ export const AppointmentsPage: React.FC = () => {
                               fill="currentColor"
                             />
                           </svg>
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button className="icon-btn" onClick={() => handleDelete(row)} title="Delete appointment" aria-label="Delete appointment">
+                          <TrashIcon />
                         </button>
                       )}
                     </div>

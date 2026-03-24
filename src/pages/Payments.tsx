@@ -3,7 +3,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { usePayments, type Payment, type PaymentMethod } from '../store/usePayments';
 import logo from '../assets/novo-logo.svg';
 import { useAuth } from '../components/AuthProvider';
-import { DownloadIcon, FilterXIcon, PlusIcon } from '../components/UiIcons';
+import { DownloadIcon, FilterXIcon, PlusIcon, TrashIcon } from '../components/UiIcons';
 
 type RangeFilter = 'all' | 'today' | 'week' | 'month';
 type HistoryView = 'day' | 'week' | 'month';
@@ -40,10 +40,35 @@ const getWeekKey = (date: Date) => {
   return ref.toISOString().slice(0, 10);
 };
 
+const stripReferenceSuffix = (value: string) => value.replace(/\s*\([^()]+\)\s*$/, '').trim();
+
+const getReceiptItems = (payment: Payment) => {
+  const rawSource = stripReferenceSuffix(payment.source || '');
+  const normalized = rawSource
+    .replace(/^Appointment\s*-\s*/i, '')
+    .replace(/^Product (Sale|Balance)\s*-\s*/i, '')
+    .replace(/^Manual Entry\s*-\s*/i, '')
+    .trim();
+
+  const sourceItems = normalized
+    .split(/\s+\+\s+|,\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (sourceItems.length > 0) {
+    return sourceItems;
+  }
+
+  return (payment.notes || '')
+    .split(/\s+\+\s+|,\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
 export const PaymentsPage: React.FC = () => {
-  const { payments, error, hydrate, addPayment } = usePayments();
+  const { payments, error, hydrate, addPayment, removePayment } = usePayments();
   const { user } = useAuth();
   const canManagePayments = user?.role === 'admin' || user?.role === 'fdo';
+  const canDeletePayments = user?.role === 'admin';
   const isReadOnly = !canManagePayments;
   const [range, setRange] = useState<RangeFilter>('all');
   const [historyView, setHistoryView] = useState<HistoryView>('day');
@@ -270,6 +295,12 @@ export const PaymentsPage: React.FC = () => {
     a.download = 'payments.csv';
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleDelete = async (payment: Payment) => {
+    if (!canDeletePayments) return;
+    if (!window.confirm(`Delete payment ${payment.id} for ${payment.patientName}?`)) return;
+    await removePayment(payment.id);
   };
 
   const now = new Date();
@@ -548,7 +579,7 @@ export const PaymentsPage: React.FC = () => {
                 <th>Source</th>
                 <th>Notes</th>
                 <th>Ref ID</th>
-                <th>Slip</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -571,7 +602,8 @@ export const PaymentsPage: React.FC = () => {
                     <td className="muted small">{payment.source}</td>
                     <td className="muted small">{payment.notes || '-'}</td>
                     <td className="muted small">{payment.id}</td>
-                    <td>
+                    <td className="actions-cell">
+                      <div className="action-stack">
                       <button className="icon-btn" title="Print slip" aria-label="Print slip" onClick={() => setPrintingPayment(payment)}>
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                           <path
@@ -580,6 +612,12 @@ export const PaymentsPage: React.FC = () => {
                           />
                         </svg>
                       </button>
+                      {canDeletePayments && (
+                        <button className="icon-btn" title="Delete payment" aria-label="Delete payment" onClick={() => void handleDelete(payment)}>
+                          <TrashIcon />
+                        </button>
+                      )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -606,6 +644,10 @@ export const PaymentsPage: React.FC = () => {
 
       {printingPayment && (
         <section className="consultation-print">
+          {(() => {
+            const receiptItems = getReceiptItems(printingPayment);
+            return (
+              <>
           <div className="consultation-watermark" aria-hidden="true">
             <img src={logo} alt="" />
           </div>
@@ -707,6 +749,26 @@ export const PaymentsPage: React.FC = () => {
             </table>
           </section>
 
+          {receiptItems.length > 0 && (
+            <section className="consultation-block">
+              <div className="consultation-block__title">Treatment / Product Details</div>
+              <table className="consultation-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {receiptItems.map((item) => (
+                    <tr key={item}>
+                      <td>{item}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+
           <section className="consultation-signatures">
             <div>
               <div className="signature-line" />
@@ -717,6 +779,9 @@ export const PaymentsPage: React.FC = () => {
               <div className="signature-label">Patient Signature</div>
             </div>
           </section>
+              </>
+            );
+          })()}
         </section>
       )}
     </div>

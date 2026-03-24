@@ -26,6 +26,8 @@ type PaymentState = {
   hydrate: () => Promise<void>;
   addPayment: (payment: Omit<Payment, 'id'>) => Promise<Payment | null>;
   upsertPayment: (payment: Omit<Payment, 'id'>) => Promise<Payment | null>;
+  removePayment: (id: string) => Promise<boolean>;
+  removePaymentsByReferenceId: (referenceId: string) => Promise<number>;
 };
 
 const STORAGE_KEY = 'clinic-payments';
@@ -100,6 +102,20 @@ const toRowPayload = (payment: Payment) => ({
   source: payment.source,
 });
 
+const extractReferenceId = (source: string) => {
+  const match = source.match(/\(([^()]+)\)\s*$/);
+  return match?.[1]?.trim() || null;
+};
+
+const findMatchingPayment = (rows: Payment[], payment: Omit<Payment, 'id'> | Payment) => {
+  const targetReferenceId = extractReferenceId(payment.source);
+  return rows.find((row) => {
+    if (row.source === payment.source) return true;
+    if (!targetReferenceId) return false;
+    return extractReferenceId(row.source) === targetReferenceId;
+  });
+};
+
 export const usePayments = create<PaymentState>((set, get) => ({
   payments: loadPayments(),
   isLoading: false,
@@ -120,6 +136,19 @@ export const usePayments = create<PaymentState>((set, get) => ({
       return;
     }
     const mapped = (data as PaymentRow[]).map(toModel);
+    if (mapped.length === 0) {
+      const cached = loadPayments();
+      if (cached.length > 0) {
+        const { error: seedError } = await supabase
+          .from('payments')
+          .upsert(cached.map(toRowPayload), { onConflict: 'id' });
+        if (!seedError) {
+          persistPayments(cached);
+          set({ payments: cached, isLoading: false, error: null });
+          return;
+        }
+      }
+    }
     persistPayments(mapped);
     set({ payments: mapped, isLoading: false, error: null });
   },
@@ -156,7 +185,7 @@ export const usePayments = create<PaymentState>((set, get) => ({
     return created;
   },
   upsertPayment: async (payment) => {
-    const current = get().payments.find((row) => row.source === payment.source);
+    const current = findMatchingPayment(get().payments, payment);
     const nextPayment: Payment = current
       ? { ...current, ...payment, id: current.id }
       : { ...payment, id: `PM-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}` };
@@ -192,5 +221,54 @@ export const usePayments = create<PaymentState>((set, get) => ({
       return { payments: next, error: null };
     });
     return nextPayment;
+  },
+  removePayment: async (id) => {
+    const current = get().payments.find((payment) => payment.id === id);
+    if (!current) {
+      set({ error: 'Payment not found.' });
+      return false;
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.from('payments').delete().eq('id', id);
+      if (error) {
+        set({ error: error.message });
+        return false;
+      }
+    }
+
+    set((state) => {
+      const next = state.payments.filter((payment) => payment.id !== id);
+      persistPayments(next);
+      return { payments: next, error: null };
+    });
+    return true;
+  },
+  removePaymentsByReferenceId: async (referenceId) => {
+    const trimmedReferenceId = referenceId.trim();
+    if (!trimmedReferenceId) return 0;
+
+    const matches = get().payments.filter(
+      (payment) => extractReferenceId(payment.source) === trimmedReferenceId
+    );
+    if (matches.length === 0) return 0;
+
+    if (isSupabaseConfigured && supabase) {
+      const ids = matches.map((payment) => payment.id);
+      const { error } = await supabase.from('payments').delete().in('id', ids);
+      if (error) {
+        set({ error: error.message });
+        return 0;
+      }
+    }
+
+    set((state) => {
+      const next = state.payments.filter(
+        (payment) => extractReferenceId(payment.source) !== trimmedReferenceId
+      );
+      persistPayments(next);
+      return { payments: next, error: null };
+    });
+    return matches.length;
   },
 }));

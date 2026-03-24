@@ -240,6 +240,26 @@ export const useProductSales = create<ProductSalesState>((set, get) => ({
 
     const productsData = (productsResp.data as ProductRowDb[]) ?? [];
     const ordersData = (ordersResp.data as OrderRowDb[]) ?? [];
+    if (productsData.length === 0 && ordersData.length === 0) {
+      const cachedProducts = loadRows(PRODUCTS_KEY, initialProducts);
+      const cachedOrders = loadRows(ORDERS_KEY, initialOrders);
+      if (cachedProducts.length > 0 || cachedOrders.length > 0) {
+        const [seedProducts, seedOrders] = await Promise.all([
+          cachedProducts.length > 0
+            ? supabase.from('products').upsert(cachedProducts.map(toProductPayload), { onConflict: 'id' })
+            : Promise.resolve({ error: null }),
+          cachedOrders.length > 0
+            ? supabase.from('product_orders').upsert(cachedOrders.map(toOrderPayload), { onConflict: 'id' })
+            : Promise.resolve({ error: null }),
+        ]);
+        if (!seedProducts.error && !seedOrders.error) {
+          persistRows(PRODUCTS_KEY, cachedProducts);
+          persistRows(ORDERS_KEY, cachedOrders);
+          set({ products: cachedProducts, orders: cachedOrders, isLoading: false, error: null });
+          return;
+        }
+      }
+    }
     const mappedProducts = productsData;
     const mappedOrders = ordersData.map(toOrderModel);
     persistRows(PRODUCTS_KEY, mappedProducts);

@@ -2,15 +2,16 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useStaff, type StaffRole } from '../store/useStaff';
 import { hashPassword } from '../utils/password';
 import { useAuth } from '../components/AuthProvider';
-import { FilterXIcon, TrashIcon } from '../components/UiIcons';
+import { EditIcon, FilterXIcon, TrashIcon } from '../components/UiIcons';
 
 export const StaffPage: React.FC = () => {
-  const { staff, error, hydrate, addStaff, removeStaff } = useStaff();
+  const { staff, error, hydrate, addStaff, updateStaff, removeStaff } = useStaff();
   const { user } = useAuth();
   const canManageStaff = user?.role === 'admin' || user?.role === 'fdo';
   const isReadOnly = !canManageStaff;
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState<'All' | StaffRole>('All');
+  const [editingId, setEditingId] = useState('');
   const [form, setForm] = useState({
     name: '',
     role: 'Doctor' as StaffRole,
@@ -20,6 +21,7 @@ export const StaffPage: React.FC = () => {
     confirmPassword: '',
     specialty: '',
     branch: 'Main',
+    status: 'Active' as 'Active' | 'Inactive',
   });
   const [formError, setFormError] = useState('');
 
@@ -41,33 +43,8 @@ export const StaffPage: React.FC = () => {
     [staff, search, filterRole]
   );
 
-  const handleAdd = async () => {
-    if (isReadOnly) return;
-    setFormError('');
-    if (!form.name || !form.phone || !form.email) {
-      setFormError('Name, phone, and email are required.');
-      return;
-    }
-    if (!form.password || form.password.length < 6) {
-      setFormError('Password is required and must be at least 6 characters.');
-      return;
-    }
-    if (form.password !== form.confirmPassword) {
-      setFormError('Password and confirm password do not match.');
-      return;
-    }
-    const passwordHash = await hashPassword(form.password);
-    const created = await addStaff({
-      name: form.name,
-      role: form.role,
-      phone: form.phone,
-      email: form.email,
-      specialty: form.specialty || undefined,
-      branch: form.branch || undefined,
-      status: 'Active',
-      passwordHash,
-    });
-    if (!created) return;
+  const resetForm = () => {
+    setEditingId('');
     setForm({
       name: '',
       role: 'Doctor',
@@ -77,12 +54,70 @@ export const StaffPage: React.FC = () => {
       confirmPassword: '',
       specialty: '',
       branch: 'Main',
+      status: 'Active',
     });
+  };
+
+  const handleSave = async () => {
+    if (isReadOnly) return;
+    setFormError('');
+    if (!form.name || !form.phone || !form.email) {
+      setFormError('Name, phone, and email are required.');
+      return;
+    }
+    if (!editingId && (!form.password || form.password.length < 6)) {
+      setFormError('Password is required and must be at least 6 characters.');
+      return;
+    }
+    if ((form.password || form.confirmPassword) && form.password !== form.confirmPassword) {
+      setFormError('Password and confirm password do not match.');
+      return;
+    }
+
+    const passwordHash =
+      form.password && form.password.length >= 6 ? await hashPassword(form.password) : undefined;
+    const payload = {
+      name: form.name.trim(),
+      role: form.role,
+      phone: form.phone.trim(),
+      email: form.email.trim(),
+      specialty: form.specialty || undefined,
+      branch: form.branch || undefined,
+      status: form.status,
+      passwordHash,
+    };
+    const saved = editingId
+      ? await updateStaff(editingId, payload)
+      : await addStaff({
+          ...payload,
+          passwordHash: passwordHash!,
+        });
+    if (!saved) return;
+    resetForm();
   };
 
   const handleDelete = async (id: string) => {
     if (isReadOnly) return;
     await removeStaff(id);
+  };
+
+  const handleEdit = (id: string) => {
+    if (isReadOnly) return;
+    const member = staff.find((row) => row.id === id);
+    if (!member) return;
+    setEditingId(id);
+    setForm({
+      name: member.name,
+      role: member.role,
+      phone: member.phone,
+      email: member.email,
+      password: '',
+      confirmPassword: '',
+      specialty: member.specialty || '',
+      branch: member.branch || 'Main',
+      status: member.status,
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
@@ -93,9 +128,16 @@ export const StaffPage: React.FC = () => {
             <div className="section__title">Add Doctor / Staff</div>
             <div className="muted">Create profiles for doctors, nurses, reception, technicians, or admins</div>
           </div>
-          <button className="pill" onClick={handleAdd} disabled={isReadOnly}>
-            Save Team Member
-          </button>
+          <div className="action-stack">
+            {editingId && (
+              <button className="pill pill--ghost" onClick={resetForm} disabled={isReadOnly}>
+                Cancel Edit
+              </button>
+            )}
+            <button className="pill" onClick={handleSave} disabled={isReadOnly}>
+              {editingId ? 'Update Team Member' : 'Save Team Member'}
+            </button>
+          </div>
         </div>
         <div className="form-grid">
           <input
@@ -131,7 +173,7 @@ export const StaffPage: React.FC = () => {
           <input
             className="input"
             type="password"
-            placeholder="Password (min 6 characters)"
+            placeholder={editingId ? 'New password (optional)' : 'Password (min 6 characters)'}
             value={form.password}
             onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
             autoComplete="new-password"
@@ -160,6 +202,10 @@ export const StaffPage: React.FC = () => {
             onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))}
             disabled={isReadOnly}
           />
+          <select className="input" value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as 'Active' | 'Inactive' }))} disabled={isReadOnly}>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
         </div>
         {formError && <div className="muted small" style={{ marginTop: 8, color: 'var(--color-error, #c00)' }}>{formError}</div>}
         {error && <div className="muted small" style={{ marginTop: 8, color: 'var(--color-error, #c00)' }}>{error}</div>}
@@ -200,6 +246,7 @@ export const StaffPage: React.FC = () => {
                 <th>Role</th>
                 <th>Specialty</th>
                 <th>Branch</th>
+                <th>Status</th>
                 <th>Phone</th>
                 <th>Email</th>
                 <th>Actions</th>
@@ -215,10 +262,14 @@ export const StaffPage: React.FC = () => {
                   <td>{member.role}</td>
                   <td className="muted small">{member.specialty || '-'}</td>
                   <td className="muted small">{member.branch || '-'}</td>
+                  <td className="muted small">{member.status}</td>
                   <td className="muted small">{member.phone}</td>
                   <td className="muted small">{member.email}</td>
                   <td className="actions-cell">
                     <div className="action-stack">
+                      <button className="icon-btn" onClick={() => handleEdit(member.id)} disabled={isReadOnly} aria-label="Edit" title="Edit">
+                        <EditIcon />
+                      </button>
                       <button className="icon-btn" onClick={() => handleDelete(member.id)} disabled={isReadOnly} aria-label="Delete" title="Delete">
                         <TrashIcon />
                       </button>
@@ -228,7 +279,7 @@ export const StaffPage: React.FC = () => {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted small" style={{ textAlign: 'center' }}>
+                  <td colSpan={8} className="muted small" style={{ textAlign: 'center' }}>
                     No team members match this search.
                   </td>
                 </tr>

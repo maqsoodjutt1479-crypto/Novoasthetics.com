@@ -32,6 +32,7 @@ type AppointmentState = {
   addAppointment: (appt: Omit<Appointment, 'id' | 'status' | 'createdAt'> & { status?: AppointmentStatus }) => Promise<Appointment | null>;
   updateStatus: (id: string, status: AppointmentStatus) => Promise<Appointment | null>;
   updateAppointment: (id: string, changes: Partial<Appointment>) => Promise<Appointment | null>;
+  removeAppointment: (id: string) => Promise<boolean>;
 };
 
 const STORAGE_KEY = 'clinic-appointments';
@@ -145,6 +146,19 @@ export const useAppointments = create<AppointmentState>((set, get) => ({
     }
 
     const mapped = (data as AppointmentRow[]).map(toModel);
+    if (mapped.length === 0) {
+      const cached = loadAppointments();
+      if (cached.length > 0) {
+        const { error: seedError } = await supabase
+          .from('appointments')
+          .upsert(cached.map(toRowPayload), { onConflict: 'id' });
+        if (!seedError) {
+          persistAppointments(cached);
+          set({ appointments: cached, isLoading: false, error: null });
+          return;
+        }
+      }
+    }
     persistAppointments(mapped);
     set({ appointments: mapped, isLoading: false, error: null });
   },
@@ -259,5 +273,27 @@ export const useAppointments = create<AppointmentState>((set, get) => ({
       return { appointments: next, error: null };
     });
     return updated;
+  },
+  removeAppointment: async (id) => {
+    const current = get().appointments.find((appointment) => appointment.id === id);
+    if (!current) {
+      set({ error: 'Appointment not found.' });
+      return false;
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.from('appointments').delete().eq('id', id);
+      if (error) {
+        set({ error: error.message });
+        return false;
+      }
+    }
+
+    set((state) => {
+      const next = state.appointments.filter((appointment) => appointment.id !== id);
+      persistAppointments(next);
+      return { appointments: next, error: null };
+    });
+    return true;
   },
 }));

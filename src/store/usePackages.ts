@@ -100,7 +100,22 @@ export const usePackages = create<PackagesState>((set, get) => ({
       return;
     }
 
-    const mapped = (data as PackageRow[]).length ? (data as PackageRow[]).map(toModel) : loadPackages();
+    const rows = data as PackageRow[];
+    if (rows.length === 0) {
+      const cached = loadPackages();
+      if (cached.length > 0) {
+        const { error: seedError } = await supabase
+          .from('packages')
+          .upsert(cached.map(toPayload), { onConflict: 'id' });
+        if (!seedError) {
+          persistPackages(cached);
+          set({ packages: cached, isLoading: false, error: null });
+          return;
+        }
+      }
+    }
+
+    const mapped = rows.map(toModel);
     persistPackages(mapped);
     set({ packages: mapped, isLoading: false, error: null });
   },
